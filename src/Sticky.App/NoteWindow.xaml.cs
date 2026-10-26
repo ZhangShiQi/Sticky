@@ -28,15 +28,22 @@ public partial class NoteWindow : Window
     private string _color;
     private int _modalDepth;
     private bool _menuOpen;
+    private bool _pointerOver;
+    private bool _dragging;
+    private bool _showHeaderOnHover;
+    private static readonly DependencyPropertyKey IsHeaderExpandedPropertyKey = DependencyProperty.RegisterReadOnly(nameof(IsHeaderExpanded), typeof(bool), typeof(NoteWindow), new PropertyMetadata(false));
+    public static readonly DependencyProperty IsHeaderExpandedProperty = IsHeaderExpandedPropertyKey.DependencyProperty;
+    public bool IsHeaderExpanded => (bool)GetValue(IsHeaderExpandedProperty);
     public static readonly DependencyProperty IsEditingProperty = DependencyProperty.Register(nameof(IsEditing), typeof(bool), typeof(NoteWindow), new PropertyMetadata(false));
     public bool IsEditing => (bool)GetValue(IsEditingProperty);
 
-    public NoteWindow(StickyWorkspace workspace, Note note, Core.WindowState state)
+    public NoteWindow(StickyWorkspace workspace, Note note, Core.WindowState state, NoteWindow? near = null)
     {
         _workspace = workspace;
         _note = note;
         _state = state;
         _color = note.Color;
+        _showHeaderOnHover = workspace.EditorPreferences.ShowHeaderOnHover;
         InitializeComponent();
         TitleBox.Text = note.Title;
         Title = note.DisplayTitle + " · Sticky";
@@ -46,14 +53,20 @@ public partial class NoteWindow : Window
         AttachImageMenus();
         Width = FiniteClamp(state.Width, 280, 1200, 390);
         Height = FiniteClamp(state.Height, 180, 1200, 320);
-        // Clamp to the current primary work area after display or DPI changes.
-        var area = SystemParameters.WorkArea;
-        Left = FiniteClamp(state.Left, area.Left, Math.Max(area.Left, area.Right - Width), area.Left + 100);
-        Top = FiniteClamp(state.Top, area.Top, Math.Max(area.Top, area.Bottom - Height), area.Top + 80);
+        Left = FiniteClamp(near is null ? state.Left : near.Left + 32, -1_000_000, 1_000_000, 190);
+        Top = FiniteClamp(near is null ? state.Top : near.Top + 32, -1_000_000, 1_000_000, 130);
+        Loaded += (_, _) =>
+        {
+            NoteWindowPlacement.Place(this, near, _workspace.Windows.Values);
+            CaptureWindowState();
+            _workspace.SaveDevice();
+            _pointerOver = IsMouseOver;
+            UpdateHeaderState();
+        };
         Topmost = state.Topmost;
         _saveTimer.Tick += (_, _) => { _saveTimer.Stop(); SaveNow(false); };
         _layoutTimer.Tick += (_, _) => { _layoutTimer.Stop(); CaptureWindowState(); _workspace.SaveDevice(); };
-        CommandBindings.Add(new CommandBinding(ApplicationCommands.New, (_, _) => _workspace.CreateNote(_note.GroupId)));
+        CommandBindings.Add(new CommandBinding(ApplicationCommands.New, (_, _) => CreateNearbyNote()));
         CommandBindings.Add(new CommandBinding(ApplicationCommands.Save, (_, _) => SaveNow()));
         CommandBindings.Add(new CommandBinding(ApplicationCommands.Paste, PasteExecuted, (_, e) => e.CanExecute = true));
         InputBindings.Add(new KeyBinding(ApplicationCommands.New, Key.N, ModifierKeys.Control));
@@ -63,6 +76,8 @@ public partial class NoteWindow : Window
         // Cancel WPF's default XAML/RTF import. Only text and normalized raster images enter the document.
         DataObject.AddPastingHandler(Editor, (_, e) => { e.CancelCommand(); PasteClipboard(); });
         _loading = false;
+        MouseEnter += (_, _) => { _pointerOver = true; UpdateHeaderState(); };
+        MouseLeave += (_, _) => { _pointerOver = false; UpdateHeaderState(); };
         UpdateCounters();
         Deactivated += (_, _) => { if (_modalDepth == 0 && !_menuOpen) FinishEditing(); };
     }
@@ -78,6 +93,7 @@ public partial class NoteWindow : Window
         ApplyTheme();
         Editor.Focus();
         UpdateFormatButtons();
+        UpdateHeaderState();
     }
 
     public void FinishEditing()
@@ -87,6 +103,7 @@ public partial class NoteWindow : Window
         Editor.IsReadOnly = true;
         Editor.VerticalScrollBarVisibility = ScrollBarVisibility.Hidden;
         ApplyTheme();
+        UpdateHeaderState();
     }
 
     public void ReloadAfterSync(bool reloadBody)
@@ -113,9 +130,17 @@ public partial class NoteWindow : Window
     {
         var wasLoading = _loading;
         _loading = true;
-        try { DocumentCodec.ApplyDefaults(Editor.Document, preferences); }
+        try
+        {
+            DocumentCodec.ApplyDefaults(Editor.Document, preferences);
+            _showHeaderOnHover = preferences.ShowHeaderOnHover;
+            UpdateHeaderState();
+        }
         finally { _loading = wasLoading; }
     }
+
+    private void UpdateHeaderState() => SetValue(IsHeaderExpandedPropertyKey,
+        _menuOpen || _dragging || (_showHeaderOnHover ? _pointerOver : IsEditing));
 
     private void StartEditing(object sender, MouseButtonEventArgs e) { if (!IsEditing) EnterEditMode(); }
     private void OnWindowKeyDown(object sender, KeyEventArgs e)
@@ -131,7 +156,12 @@ public partial class NoteWindow : Window
             if (node is ButtonBase) return;
             node = VisualTreeHelper.GetParent(node);
         }
-        if (e.LeftButton == MouseButtonState.Pressed) { DragMove(); e.Handled = true; }
+        if (e.LeftButton == MouseButtonState.Pressed)
+        {
+            _dragging = true; UpdateHeaderState();
+            try { DragMove(); e.Handled = true; }
+            finally { _dragging = false; _pointerOver = IsMouseOver; UpdateHeaderState(); }
+        }
     }
     private void EditorSelectionChanged(object sender, RoutedEventArgs e) { if (!_loading) UpdateFormatButtons(); }
     private void UpdateFormatButtons()
@@ -259,10 +289,11 @@ public partial class NoteWindow : Window
             item.Click += (_, _) => { SetNoteColor(key); Activate(); Editor.Focus(); };
             menu.Items.Add(item);
         }
-        menu.Opened += (_, _) => _menuOpen = true;
+        menu.Opened += (_, _) => { _menuOpen = true; UpdateHeaderState(); };
         menu.Closed += (_, _) =>
         {
             _menuOpen = false;
+            UpdateHeaderState();
             Dispatcher.BeginInvoke(() => { if (IsVisible && !IsActive && _modalDepth == 0) FinishEditing(); }, DispatcherPriority.Background);
         };
         menu.IsOpen = true;
@@ -314,8 +345,8 @@ public partial class NoteWindow : Window
             Add("移入回收站", () => _workspace.Delete(_note));
             Add("关闭窗口（保留便签）", Close);
         }
-        menu.Opened += (_, _) => { _menuOpen = true; Populate(); };
-        menu.Closed += (_, _) => { _menuOpen = false; if (!IsActive && _modalDepth == 0) FinishEditing(); };
+        menu.Opened += (_, _) => { _menuOpen = true; UpdateHeaderState(); Populate(); };
+        menu.Closed += (_, _) => { _menuOpen = false; UpdateHeaderState(); if (!IsActive && _modalDepth == 0) FinishEditing(); };
         Populate();
         return menu;
     }
@@ -329,7 +360,8 @@ public partial class NoteWindow : Window
         }
         finally { _modalDepth--; }
     }
-    private void NewNote(object sender, RoutedEventArgs e) => _workspace.CreateNote(_note.GroupId);
+    private void CreateNearbyNote() => _workspace.CreateNote(_note.GroupId, this);
+    private void NewNote(object sender, RoutedEventArgs e) => CreateNearbyNote();
     private void ManualSave(object sender, RoutedEventArgs e) => SaveNow();
     private void CloseNote(object sender, RoutedEventArgs e) => Close();
 
@@ -472,6 +504,8 @@ public partial class NoteWindow : Window
             }
         };
         menu.Items.Add(remove);
+        menu.Opened += (_, _) => { _menuOpen = true; UpdateHeaderState(); };
+        menu.Closed += (_, _) => { _menuOpen = false; UpdateHeaderState(); if (!IsActive && _modalDepth == 0) FinishEditing(); };
         image.ContextMenu = menu;
     }
 }

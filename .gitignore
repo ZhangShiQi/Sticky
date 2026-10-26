@@ -13,6 +13,8 @@
 /.tools/
 /.local-demo/
 /.test-data/
+/.sticky-update-backup-*/
+/.sticky-update-stage-*/
 /.codex/
 
 # Personal notes, images, sync configuration and repository caches

@@ -25,6 +25,7 @@ internal static partial class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        if (args.Length >= 3 && args[0] == "--instance-probe") return InstanceProbe(args);
         _root = Path.GetFullPath(args.Length > 0 ? args[0] : Path.Combine(Path.GetTempPath(), "Sticky.Tests", Guid.NewGuid().ToString("N")));
         Directory.CreateDirectory(_root);
         GitIntegrationTests.ToolBaseDirectory = args.Length > 1 ? Path.GetFullPath(args[1]) : null;
@@ -47,6 +48,11 @@ internal static partial class Program
         Run("Unsafe ZIP paths are rejected before writing notes", UnsafeZip);
         Run("Device layout stays outside note content", DeviceRoundTrip);
         Run("Multiple windows, debounce autosave, close/reopen, exit/restart", WindowLifecycle);
+        Run("New-note button and shortcut open beside the current note and retain the group", NearbyNoteWindows);
+        Run("Nearby placement fits monitor edges, negative coordinates and scaling", NearbyPlacementEdges);
+        Run("Repeated nearby creation finds free slots among differently placed notes", NearbyAvoidance);
+        Run("Crowded nearby placement cascades distinctly instead of jumping far away", CrowdedNearbyPlacement);
+        Run("Repeated new-note actions avoid visible windows and ignore minimized notes", RepeatedNearbyWindows);
         Run("Failed autosave retains edits and succeeds after the file unlocks", FailedAutosave);
         Run("Groups persist, rename, move and filter independently from search", GroupLifecycle);
         Run("Backup import remaps conflicting group IDs without overwriting groups", GroupBackup);
@@ -69,6 +75,16 @@ internal static partial class Program
         Run("Workspace navigation submits search on Enter and reuses categorized settings", SidebarAndSettings);
         Run("Startup settings toggle registration and recover from access failures", StartupSettings);
         Run("Startup command preserves quoted paths, workspace and dotnet host", StartupCommands);
+        Run("New-note colors and hover preferences default on, persist, and apply live", InteractionPreferences);
+        Run("Hover expands only the header, collapses on leave, and keeps menus usable", HoverHeader);
+        Run("Application singleton blocks other processes and forwards activation", SingleInstance);
+        Run("Update releases use stable numeric versions and trusted assets with SHA256", UpdateReleaseValidation);
+        Run("Update downloads reject corruption, unsafe redirects, truncation and cancellation", UpdateDownloadValidation);
+        Run("Private update login authenticates only official APIs and never redirect hosts", PrivateUpdateAuthentication);
+        Run("Update archives reject traversal, personal data, duplicate paths and symlinks", UpdateArchiveValidation);
+        Run("Update installation preserves portable and external data with program backups", UpdateInstallPreservesData);
+        Run("Update installation rolls back all changed program components on failure", UpdateInstallRollback);
+        Run("Update preferences persist and offline checks never block local recording", UpdatePreferencesAndOffline);
         if (GitIntegrationTests.ToolBaseDirectory is not null)
             Run("Bundled native Git and GCM run with no system Git or dotnet on PATH", () => GitTest("portable-tools", GitIntegrationTests.PortableTools));
         Console.WriteLine($"\n{_passed} passed; {_failed} failed. Artifacts: {_root}");

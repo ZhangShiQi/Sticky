@@ -1,7 +1,7 @@
 ﻿param([string]$OutputDirectory)
 . "$PSScriptRoot\common.ps1"
 
-$projectDefinition = [xml](Get-Content -LiteralPath (Join-Path $projectRoot 'src\Sticky.App\Sticky.App.csproj') -Raw)
+$projectDefinition = [xml](Get-Content -LiteralPath (Join-Path $projectRoot 'Directory.Build.props') -Raw)
 $version = ($projectDefinition.Project.PropertyGroup | Where-Object { $_.Version } | Select-Object -First 1).Version
 if (!$version) { throw 'Application version is missing.' }
 $packageName = "Sticky-$version-win-x64-portable"
@@ -59,7 +59,8 @@ Copy-Item -LiteralPath (Join-Path $runtimePackage "$runtimeVersion\LICENSE.TXT")
 Copy-Item -LiteralPath (Join-Path $runtimePackage "$runtimeVersion\THIRD-PARTY-NOTICES.TXT") -Destination (Join-Path $licenses 'DOTNET-THIRD-PARTY-NOTICES.txt')
 $desktopLicense = Join-Path $nugetRoot "microsoft.windowsdesktop.app.runtime.win-x64\$runtimeVersion\LICENSE"
 Copy-Item -LiteralPath $desktopLicense -Destination (Join-Path $licenses 'WPF-WINFORMS-LICENSE.txt')
-Copy-Item -LiteralPath (Join-Path $projectRoot 'packaging\使用说明.txt') -Destination (Join-Path $OutputDirectory '使用说明.txt')
+$instructions = Get-Content -LiteralPath (Join-Path $projectRoot 'packaging\使用说明.txt') -Raw -Encoding UTF8
+[System.IO.File]::WriteAllText((Join-Path $OutputDirectory '使用说明.txt'), $instructions.Replace('{{VERSION}}', $version), [System.Text.UTF8Encoding]::new($true))
 New-Item -ItemType Directory -Path (Join-Path $OutputDirectory 'assets') | Out-Null
 Copy-Item -LiteralPath (Join-Path $projectRoot 'src\Sticky.App\Assets\Sticky.svg') -Destination (Join-Path $OutputDirectory 'assets\Sticky.svg')
 Copy-Item -LiteralPath (Join-Path $projectRoot 'packaging\THIRD-PARTY-SOURCES.txt') -Destination (Join-Path $licenses 'THIRD-PARTY-SOURCES.txt')

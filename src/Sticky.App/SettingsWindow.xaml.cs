@@ -9,12 +9,13 @@ using Sticky.Core;
 
 namespace Sticky.App;
 
-public enum SettingsSection { Sync, Data, Typography, Application }
+public enum SettingsSection { Sync, Data, Typography, Application, Updates }
 
 public partial class SettingsWindow : Window
 {
     private readonly StickyWorkspace _workspace;
     private bool _updatingStartup = true;
+    private bool _loadingUpdates = true;
     public string DataPath => _workspace.Store.Root;
     public string BackupsPath => _workspace.Store.BackupsDirectory;
     public string ApplicationVersion => "Sticky " + typeof(SettingsWindow).Assembly.GetName().Version?.ToString(3);
@@ -28,6 +29,9 @@ public partial class SettingsWindow : Window
         SyncHost.Content = new SyncSettingsView(workspace);
         LoadTypographyFields(workspace.EditorPreferences);
         RefreshStartup();
+        UpdatesPanel.DataContext = workspace.Updates;
+        AutomaticUpdatesCheckBox.IsChecked = workspace.Updates.Automatic;
+        _loadingUpdates = false;
     }
     public void SelectSection(SettingsSection section)
     {
@@ -84,6 +88,8 @@ public partial class SettingsWindow : Window
     {
         DefaultFontSizeBox.Text = preferences.DefaultFontSize.ToString("0.##", CultureInfo.CurrentCulture);
         ParagraphSpacingBox.Text = preferences.ParagraphSpacing.ToString("0.##", CultureInfo.CurrentCulture);
+        RandomColorCheckBox.IsChecked = preferences.RandomizeNewNoteColor;
+        HoverHeaderCheckBox.IsChecked = preferences.ShowHeaderOnHover;
     }
     private void SaveTypography(object sender, RoutedEventArgs e)
     {
@@ -92,10 +98,11 @@ public partial class SettingsWindow : Window
             if (!double.TryParse(DefaultFontSizeBox.Text, NumberStyles.Float, CultureInfo.CurrentCulture, out var fontSize)
                 || !double.TryParse(ParagraphSpacingBox.Text, NumberStyles.Float, CultureInfo.CurrentCulture, out var spacing))
                 throw new InvalidDataException("请输入有效的字号和段落间距数值。");
-            if (!_workspace.UpdateEditorPreferences(new EditorPreferences { DefaultFontSize = fontSize, ParagraphSpacing = spacing }))
+            if (!_workspace.UpdateEditorPreferences(new EditorPreferences { DefaultFontSize = fontSize, ParagraphSpacing = spacing,
+                RandomizeNewNoteColor = RandomColorCheckBox.IsChecked == true, ShowHeaderOnHover = HoverHeaderCheckBox.IsChecked == true }))
                 throw new IOException("存在未保存成功的便签，请先处理保存问题后重试。");
             TypographyStatus.Foreground = System.Windows.Media.Brushes.DarkGreen;
-            TypographyStatus.Text = "已保存并应用到全部便签。";
+            TypographyStatus.Text = "设置已保存，便签显示已更新。";
         }
         catch (Exception ex)
         {
@@ -130,5 +137,28 @@ public partial class SettingsWindow : Window
         catch (Exception ex) { StickyWorkspace.ShowError("导入失败", ex); }
     }
     private void OpenManager(object sender, RoutedEventArgs e) => _workspace.ShowManager();
+    private async void CheckForUpdates(object sender, RoutedEventArgs e) => await _workspace.Updates.CheckAsync();
+    private async void LoginAndCheckForUpdates(object sender, RoutedEventArgs e) => await _workspace.Updates.CheckAsync(interactive: true);
+    private void InstallUpdate(object sender, RoutedEventArgs e)
+    {
+        if (_workspace.PrepareExit(installUpdate: true)) System.Windows.Application.Current.Shutdown();
+    }
+    private void AutomaticUpdatesChanged(object sender, RoutedEventArgs e)
+    {
+        if (_loadingUpdates) return;
+        try { _workspace.Updates.SetAutomatic(AutomaticUpdatesCheckBox.IsChecked == true); }
+        catch (Exception ex)
+        {
+            _loadingUpdates = true;
+            AutomaticUpdatesCheckBox.IsChecked = _workspace.Updates.Automatic;
+            _loadingUpdates = false;
+            StickyWorkspace.ShowError("无法保存更新设置", ex);
+        }
+    }
+    private void OpenReleases(object sender, RoutedEventArgs e)
+    {
+        try { Process.Start(new ProcessStartInfo("https://github.com/ZhangShiQi/Sticky/releases") { UseShellExecute = true }); }
+        catch (Exception ex) { StickyWorkspace.ShowError("无法打开版本页面", ex); }
+    }
     private void ExitApplication(object sender, RoutedEventArgs e) { if (_workspace.PrepareExit()) System.Windows.Application.Current.Shutdown(); }
 }

@@ -3,6 +3,8 @@ using Sticky.Core;
 using Sticky.Storage;
 using Sticky.Sync.Git;
 using Sticky.App.Synchronization;
+using Sticky.App.ViewModels;
+using Sticky.App.Updates;
 using WindowState = Sticky.Core.WindowState;
 
 namespace Sticky.App;
@@ -22,6 +24,7 @@ public sealed class StickyWorkspace
     public SyncCoordinator Sync { get; }
     public SettingsWindow? Settings { get; private set; }
     public StartupRegistration Startup { get; }
+    public UpdateCoordinator Updates { get; }
 
     public StickyWorkspace(string root, StartupRegistration? startup = null)
     {
@@ -36,21 +39,23 @@ public sealed class StickyWorkspace
         Device = Store.LoadDeviceState();
         EditorPreferences = Store.LoadEditorPreferences();
         Sync = new SyncCoordinator(this);
+        Updates = new UpdateCoordinator(this);
     }
 
     public void NotifyChanged() => Changed?.Invoke();
 
-    public void CreateNote(Guid? groupId = null)
+    public void CreateNote(Guid? groupId = null, NoteWindow? near = null)
     {
-        var note = new Note { GroupId = groupId };
+        var note = new Note { GroupId = groupId,
+            Color = EditorPreferences.RandomizeNewNoteColor ? NotePalette.Choices[Random.Shared.Next(NotePalette.Choices.Count)].Key : "amber" };
         try { Store.Save(note); }
         catch (Exception ex) { ShowError("无法创建便签", ex); return; }
         Notes.Insert(0, note);
         NotifyChanged();
-        OpenNote(note, edit: true);
+        OpenNote(note, edit: true, near);
     }
 
-    public void OpenNote(Note note, bool edit = false)
+    public void OpenNote(Note note, bool edit = false, NoteWindow? near = null)
     {
         if (note.DeletedAt is not null) return;
         if (Windows.TryGetValue(note.Id, out var existing))
@@ -61,7 +66,7 @@ public sealed class StickyWorkspace
             return;
         }
         var state = GetWindowState(note.Id);
-        var window = new NoteWindow(this, note, state);
+        var window = new NoteWindow(this, note, state, near);
         Windows.Add(note.Id, window);
         state.IsOpen = true;
         window.Show();
@@ -117,13 +122,16 @@ public sealed class StickyWorkspace
         OpenNote(note);
     }
 
-    public bool PrepareExit()
+    public bool PrepareExit(bool installUpdate = false)
     {
         foreach (var window in Windows.Values.ToArray()) if (!window.SaveNow()) return false;
         foreach (var window in Windows.Values) window.CaptureWindowState();
         if (!SaveDevice()) return false;
+        try { Updates.ScheduleInstallOnExit(installUpdate); }
+        catch (Exception ex) { ShowError("无法启动更新，请关闭自动更新后重试退出", ex); return false; }
         IsExiting = true;
         Sync.Dispose();
+        Updates.Dispose();
         foreach (var window in Windows.Values.ToArray()) window.Close();
         Search?.Close();
         Settings?.Close();
@@ -141,7 +149,8 @@ public sealed class StickyWorkspace
     {
         NoteStore.ValidateEditorPreferences(preferences);
         if (!SaveAllNotes()) return false;
-        var saved = new EditorPreferences { DefaultFontSize = preferences.DefaultFontSize, ParagraphSpacing = preferences.ParagraphSpacing };
+        var saved = new EditorPreferences { DefaultFontSize = preferences.DefaultFontSize, ParagraphSpacing = preferences.ParagraphSpacing,
+            RandomizeNewNoteColor = preferences.RandomizeNewNoteColor, ShowHeaderOnHover = preferences.ShowHeaderOnHover };
         Store.SaveEditorPreferences(saved);
         EditorPreferences = saved;
         foreach (var window in Windows.Values) window.ApplyEditorPreferences(saved);

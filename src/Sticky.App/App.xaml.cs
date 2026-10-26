@@ -2,12 +2,15 @@ using System.IO;
 using System.Security.Cryptography;
 using System.Text;
 using System.Windows;
+using Sticky.App.Updates;
 
 namespace Sticky.App;
 
 public partial class App : Application
 {
-    private Mutex? _mutex;
+    private SingleInstanceHost? _instance;
+    private Mutex? _workspaceMutex;
+    private bool _ownsWorkspaceMutex;
     private StickyWorkspace? _workspace;
     private System.Windows.Forms.NotifyIcon? _tray;
     private System.Drawing.Icon? _trayIcon;
@@ -17,15 +20,31 @@ public partial class App : Application
     {
         base.OnStartup(e);
         if (!StartWorkspaceOnStartup) return;
+        if (e.Args.Length == 2 && e.Args[0] == "--apply-update")
+        {
+            Shutdown(UpdateInstaller.Run(e.Args[1]));
+            return;
+        }
         try
         {
-            var root = AppPaths.ResolveDataDirectory(e.Args);
             var startup = e.Args.Contains("--startup", StringComparer.Ordinal);
-            var key = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(root.TrimEnd(Path.DirectorySeparatorChar).ToUpperInvariant())));
-            _mutex = new Mutex(true, @"Local\Sticky-" + key, out var firstInstance);
-            if (!firstInstance)
+            _instance = new SingleInstanceHost();
+            if (!_instance.IsPrimary)
             {
-                if (!startup) MessageBox.Show("这个工作空间的 Sticky 已在运行，请从任务栏托盘图标打开便签管理。", "Sticky");
+                if (!startup) _instance.NotifyExistingAsync().GetAwaiter().GetResult();
+                Shutdown(); return;
+            }
+            _instance.StartListening(() => Dispatcher.BeginInvoke(() =>
+            {
+                if (_workspace is { IsExiting: false }) _workspace.ShowManager();
+            }));
+            var root = AppPaths.ResolveDataDirectory(e.Args);
+            // Keep the old per-workspace lock as protection when upgrading from a running older build.
+            var key = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(root.TrimEnd(Path.DirectorySeparatorChar).ToUpperInvariant())));
+            _workspaceMutex = new Mutex(true, @"Local\Sticky-" + key, out _ownsWorkspaceMutex);
+            if (!_ownsWorkspaceMutex)
+            {
+                if (!startup) MessageBox.Show("此工作空间仍有旧版 Sticky 在运行，请先从托盘退出旧版本。", "Sticky");
                 Shutdown();
                 return;
             }
@@ -36,6 +55,7 @@ public partial class App : Application
             if (!startup) main.Show();
             _workspace.RestoreWindows();
             _workspace.Sync.Start();
+            _workspace.Updates.Start();
             if (!startup && _workspace.Notes.Count == 0 && _workspace.Store.Warnings.Count == 0) _workspace.CreateNote();
             if (_workspace.Store.Warnings.Count > 0)
                 MessageBox.Show(string.Join("\n", _workspace.Store.Warnings), "数据恢复提示", MessageBoxButton.OK, MessageBoxImage.Warning);
@@ -54,7 +74,10 @@ public partial class App : Application
         _tray?.Dispose();
         _trayIcon?.Dispose();
         _workspace?.Sync.Dispose();
-        _mutex?.Dispose();
+        _workspace?.Updates.Dispose();
+        if (_ownsWorkspaceMutex) _workspaceMutex?.ReleaseMutex();
+        _workspaceMutex?.Dispose();
+        _instance?.Dispose();
         base.OnExit(e);
     }
 
@@ -74,5 +97,13 @@ public partial class App : Application
         _tray = new System.Windows.Forms.NotifyIcon { Text = "Sticky · 本地便签", Icon = _trayIcon,
             ContextMenuStrip = menu, Visible = true };
         _tray.DoubleClick += (_, _) => Dispatcher.BeginInvoke(workspace.ShowManager);
+        string? announcedVersion = null;
+        workspace.Updates.PropertyChanged += (_, _) =>
+        {
+            if (!workspace.Updates.CanInstall || workspace.Updates.Available?.Version is not string version || announcedVersion == version) return;
+            announcedVersion = version;
+            _tray.ShowBalloonTip(6000, "Sticky " + version + " 已就绪", "保存并退出时自动更新，也可在设置中立即重启更新。", System.Windows.Forms.ToolTipIcon.Info);
+        };
+        _tray.BalloonTipClicked += (_, _) => Dispatcher.BeginInvoke(() => workspace.ShowSettings(SettingsSection.Updates));
     }
 }

@@ -88,4 +88,6 @@ public sealed class EditorPreferences
     public int SchemaVersion { get; set; } = 1;
     public double DefaultFontSize { get; set; } = 16;
     public double ParagraphSpacing { get; set; } = 8;
+    public bool RandomizeNewNoteColor { get; set; } = true;
+    public bool ShowHeaderOnHover { get; set; } = true;
 }
