@@ -32,11 +32,12 @@ $gcmZip = Get-VerifiedDownload 'gcm-win-x64-3.0.1.zip' $gcmUrl $gcmSha
 $gcmLicense = Get-VerifiedDownload 'GCM-3.0.1-LICENSE.txt' 'https://raw.githubusercontent.com/git-ecosystem/git-credential-manager/v3.0.1/LICENSE' 'b47f1a8a744ecdc7a3da35804f88552805d33f51a726b87a2105acdfae406b07'
 
 $publishDirectory = Join-Path $projectRoot ('.tools\publish-' + [Guid]::NewGuid().ToString('N'))
+$publishArtifacts = Join-Path $projectRoot ('.tools\publish-build-' + [Guid]::NewGuid().ToString('N'))
 Push-Location $projectRoot
 try {
     & $dotnet publish 'src\Sticky.App\Sticky.App.csproj' -c Release -r win-x64 --self-contained true `
         -p:PublishProfile=Portable -p:StickyPortable=true -p:DebugType=None -p:DebugSymbols=false `
-        -m:1 -nr:false -p:UseSharedCompilation=false -o $publishDirectory --nologo
+        -m:1 -nr:false -p:UseSharedCompilation=false --artifacts-path $publishArtifacts -o $publishDirectory --nologo
     if ($LASTEXITCODE -ne 0) { throw 'Portable publish failed.' }
 } finally { Pop-Location }
 
@@ -52,7 +53,9 @@ Copy-Item -LiteralPath $gcmLicense -Destination (Join-Path $licenses 'GCM-MIT.tx
 Copy-Item -LiteralPath (Join-Path $OutputDirectory 'tools\gcm\NOTICE') -Destination (Join-Path $licenses 'GCM-NOTICE.txt')
 $nugetRoot = if ($env:NUGET_PACKAGES) { $env:NUGET_PACKAGES } else { Join-Path $env:DOTNET_CLI_HOME '.nuget\packages' }
 $runtimePackage = Join-Path $nugetRoot 'microsoft.netcore.app.runtime.win-x64'
-$runtimeConfig = Get-Content -LiteralPath (Join-Path $projectRoot 'src\Sticky.App\bin\Release\net10.0-windows\win-x64\Sticky.runtimeconfig.json') -Raw | ConvertFrom-Json
+$runtimeConfigs = @(Get-ChildItem -LiteralPath (Join-Path $publishArtifacts 'bin\Sticky.App') -Recurse -Filter 'Sticky.runtimeconfig.json')
+if ($runtimeConfigs.Count -ne 1) { throw 'Expected exactly one runtime configuration from the isolated publish build.' }
+$runtimeConfig = Get-Content -LiteralPath $runtimeConfigs[0].FullName -Raw | ConvertFrom-Json
 $runtimeVersion = ($runtimeConfig.runtimeOptions.includedFrameworks | Where-Object { $_.name -eq 'Microsoft.NETCore.App' }).version
 if (!$runtimeVersion) { throw 'The publish output did not include a self-contained runtime.' }
 Copy-Item -LiteralPath (Join-Path $runtimePackage "$runtimeVersion\LICENSE.TXT") -Destination (Join-Path $licenses 'DOTNET-MIT.txt')

@@ -83,10 +83,10 @@ try {
     $existing = Get-ReleaseState -Tag $tag -Token $token
     if ($existing -and !$existing.draft) { throw 'This version is already published; it will never be overwritten.' }
     if (!$PSCmdlet.ShouldProcess("https://github.com/$repository", "Test and package locally, push $tag and publish Release")) { return }
+    $outputRoot = Join-Path $projectRoot ('.tools\releases\' + $Version + '-' + [guid]::NewGuid().ToString('N'))
     & (Join-Path $PSScriptRoot 'test-release.ps1')
     & (Join-Path $PSScriptRoot 'test-publish-release.ps1')
-    & (Join-Path $projectRoot 'test.ps1')
-    $outputRoot = Join-Path $projectRoot ('.tools\releases\' + $Version + '-' + [guid]::NewGuid().ToString('N'))
+    & (Join-Path $projectRoot 'test.ps1') -ArtifactsPath (Join-Path $outputRoot 'test-build')
     $outputDirectory = Join-Path $outputRoot "Sticky-$Version-win-x64-portable"
     & (Join-Path $PSScriptRoot 'package-portable.ps1') -OutputDirectory $outputDirectory
     $package = $outputDirectory + '.zip'
