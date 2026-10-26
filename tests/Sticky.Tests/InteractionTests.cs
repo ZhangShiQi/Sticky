@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Documents;
 using System.Windows.Input;
 using Sticky.App;
 using Sticky.App.ViewModels;
@@ -71,11 +72,11 @@ internal static partial class Program
             Check(!window.IsEditing && editor.IsReadOnly && !formatting.IsVisible, "Hover entered editing or showed the bottom toolbar.");
             Pointer(false); Check(!window.IsHeaderExpanded && header.ActualHeight == 8, "Pointer leave did not collapse the header.");
             window.EnterEditMode(); Pointer(false);
-            Check(!window.IsHeaderExpanded && window.IsEditing, "Hover mode kept the header open after the pointer left.");
+            Check(window.IsHeaderExpanded && window.IsEditing && header.ActualHeight == 32, "Pointer leave collapsed the header during editing.");
             var menu = editor.ContextMenu!; menu.PlacementTarget = editor; menu.IsOpen = true; Pump(20); Pointer(false);
             Check(window.IsHeaderExpanded, "Leaving the note to use its menu collapsed the header.");
             menu.IsOpen = false; Pump(150); Pointer(false);
-            Check(!window.IsHeaderExpanded, "Closing the menu left the header expanded.");
+            Check(window.IsHeaderExpanded == window.IsEditing, "Closing the menu did not restore the editing/reading header state.");
             workspace.UpdateEditorPreferences(new EditorPreferences { ShowHeaderOnHover = false });
             window.FinishEditing(); Pointer(true);
             Check(!window.IsHeaderExpanded, "The hover switch did not apply to an open window.");
@@ -93,6 +94,45 @@ internal static partial class Program
         if (args[2] == "primary") return host.IsPrimary ? 0 : 21;
         if (host.IsPrimary) return 22;
         return host.NotifyExistingAsync().GetAwaiter().GetResult() ? 0 : 23;
+    }
+
+    private static void EditingHeaderStability()
+    {
+        var workspace = new StickyWorkspace(Path.Combine(_root, "editing-header-stability"));
+        workspace.CreateNote(); Pump(30);
+        var note = workspace.Notes[0]; var window = workspace.Windows[note.Id];
+        var editor = (RichTextBox)window.FindName("Editor");
+        var header = (Border)window.FindName("HeaderBar");
+        var formatting = (Border)window.FindName("FormattingBar");
+        void Pointer(bool entered)
+        {
+            window.RaiseEvent(new MouseEventArgs(Mouse.PrimaryDevice, Environment.TickCount) { RoutedEvent = entered ? Mouse.MouseEnterEvent : Mouse.MouseLeaveEvent });
+            window.UpdateLayout();
+        }
+        try
+        {
+            window.EnterEditMode(); Pointer(true);
+            editor.AppendText("这个软件还挺有意思的");
+            editor.CaretPosition = editor.Document.ContentEnd.GetInsertionPosition(LogicalDirection.Backward);
+            window.UpdateLayout();
+            var caret = editor.CaretPosition;
+            var caretY = caret.GetCharacterRect(LogicalDirection.Forward).Y;
+            var editorTop = editor.TranslatePoint(new Point(), window).Y;
+            for (var i = 0; i < 12; i++)
+            {
+                Pointer(false);
+                Check(window.IsHeaderExpanded && header.ActualHeight == 32, "A transient pointer leave collapsed the editing header.");
+                Check(window.IsEditing && !editor.IsReadOnly && formatting.IsVisible, "Pointer leave interrupted editing.");
+                Check(Math.Abs(editor.TranslatePoint(new Point(), window).Y - editorTop) < 0.5, "The document jumped when a popup covered the pointer.");
+                Check(editor.CaretPosition.CompareTo(caret) == 0 && Math.Abs(caret.GetCharacterRect(LogicalDirection.Forward).Y - caretY) < 0.5, "The caret moved during transient mouse events.");
+                Pointer(true);
+            }
+            editor.AppendText("，非常有趣");
+            Check(window.SaveNow(false) && workspace.Store.LoadNotes().Single().PlainText.Contains("非常有趣"), "Typing or saving failed after transient mouse events.");
+            window.FinishEditing(); Pointer(false);
+            Check(!window.IsHeaderExpanded && header.ActualHeight == 8, "Finishing editing did not restore the compact reading state.");
+        }
+        finally { workspace.PrepareExit(); }
     }
 
     private static void SingleInstance()

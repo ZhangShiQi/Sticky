@@ -139,8 +139,10 @@ public partial class NoteWindow : Window
         finally { _loading = wasLoading; }
     }
 
+    // IME candidate windows can temporarily take mouse hit-testing away from the note.
+    // Keep the editor's geometry stable until editing ends; hover only controls reading mode.
     private void UpdateHeaderState() => SetValue(IsHeaderExpandedPropertyKey,
-        _menuOpen || _dragging || (_showHeaderOnHover ? _pointerOver : IsEditing));
+        IsEditing || _menuOpen || _dragging || (_showHeaderOnHover && _pointerOver));
 
     private void StartEditing(object sender, MouseButtonEventArgs e) { if (!IsEditing) EnterEditMode(); }
     private void OnWindowKeyDown(object sender, KeyEventArgs e)

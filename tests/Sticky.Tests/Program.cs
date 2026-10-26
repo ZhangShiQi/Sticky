@@ -77,6 +77,7 @@ internal static partial class Program
         Run("Startup command preserves quoted paths, workspace and dotnet host", StartupCommands);
         Run("New-note colors and hover preferences default on, persist, and apply live", InteractionPreferences);
         Run("Hover expands only the header, collapses on leave, and keeps menus usable", HoverHeader);
+        Run("Editing header and caret stay stable across transient mouse leave events", EditingHeaderStability);
         Run("Application singleton blocks other processes and forwards activation", SingleInstance);
         Run("Update releases use stable numeric versions and trusted assets with SHA256", UpdateReleaseValidation);
         Run("Update downloads reject corruption, unsafe redirects, truncation and cancellation", UpdateDownloadValidation);

@@ -54,7 +54,7 @@
           <CheckBox x:Name="RandomColorCheckBox" Content="新建便签时随机颜色" AutomationProperties.Name="新建便签时随机颜色" Margin="0,0,0,10" />
           <TextBlock Text="默认开启，从五种便签颜色中随机选择；关闭后新便签使用暖黄，已有便签颜色保持原样。" TextWrapping="Wrap" Foreground="{StaticResource Muted}" LineHeight="22" Margin="0,0,0,18" />
           <CheckBox x:Name="HoverHeaderCheckBox" Content="悬停便签时显示顶部操作栏" AutomationProperties.Name="悬停便签时显示顶部操作栏" Margin="0,0,0,10" />
-          <TextBlock Text="默认开启，鼠标移入时展开，移出后恢复窄色条；悬停不会进入编辑或显示底部格式栏。拖动和菜单操作期间保持展开。关闭后仅在编辑时显示顶部操作栏。" TextWrapping="Wrap" Foreground="{StaticResource Muted}" LineHeight="22" Margin="0,0,0,24" />
+          <TextBlock Text="默认开启，阅读时鼠标移入展开，移出恢复窄色条；悬停不会进入编辑或显示底部格式栏。编辑期间顶部操作栏保持显示，输入法候选框不会改变正文布局。拖动和菜单操作期间也保持展开。关闭后仅在编辑时显示顶部操作栏。" TextWrapping="Wrap" Foreground="{StaticResource Muted}" LineHeight="22" Margin="0,0,0,24" />
           <Separator Background="#DFE3D9" Margin="0,0,0,24" />
           <TextBlock Text="默认字号" FontWeight="SemiBold" FontSize="16" Margin="0,0,0,10" />
           <StackPanel Orientation="Horizontal" Margin="0,0,0,28">
