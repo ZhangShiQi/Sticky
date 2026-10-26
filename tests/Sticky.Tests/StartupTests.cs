@@ -21,7 +21,11 @@ internal static partial class Program
     private static void StartupSettings()
     {
         var root = Path.Combine(_root, "startup-settings"); var entry = new FakeStartupEntry();
-        var startup = new StartupRegistration(Environment.ProcessPath!, AppContext.BaseDirectory, root, entry);
+        // Exercise settings against a portable executable, independent of the test host/build path.
+        // Dotnet command quoting and Windows' command-length guard are covered separately below.
+        Directory.CreateDirectory(root);
+        var executable = Path.Combine(root, "Sticky.exe"); File.WriteAllBytes(executable, []);
+        var startup = new StartupRegistration(executable, root, root, entry);
         var workspace = new StickyWorkspace(root, startup);
         try
         {
@@ -30,7 +34,7 @@ internal static partial class Program
             var toggle = (CheckBox)settings.FindName("StartupCheckBox");
             Check(toggle.IsChecked == false && entry.Writes == 0, "Opening settings enabled startup implicitly.");
             toggle.IsChecked = true;
-            Check(entry.Value == startup.Command && new StartupRegistration(Environment.ProcessPath!, AppContext.BaseDirectory, root, entry).IsEnabled, "Startup registration did not persist.");
+            Check(entry.Value == startup.Command && new StartupRegistration(executable, root, root, entry).IsEnabled, "Startup registration did not persist.");
             entry.Fail = true; toggle.IsChecked = false;
             Check(toggle.IsChecked == true && startup.IsEnabled && ((TextBlock)settings.FindName("StartupStatus")).Text.Contains("Access denied"), "Failed disable left the toggle in a misleading state.");
             entry.Fail = false; toggle.IsChecked = false;
