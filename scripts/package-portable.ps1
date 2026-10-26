@@ -33,16 +33,23 @@ $gcmLicense = Get-VerifiedDownload 'GCM-3.0.1-LICENSE.txt' 'https://raw.githubus
 
 $publishDirectory = Join-Path $projectRoot ('.tools\publish-' + [Guid]::NewGuid().ToString('N'))
 $publishArtifacts = Join-Path $projectRoot ('.tools\publish-build-' + [Guid]::NewGuid().ToString('N'))
+$launcherDirectory = Join-Path $projectRoot ('.tools\launcher-publish-' + [Guid]::NewGuid().ToString('N'))
 Push-Location $projectRoot
 try {
     & $dotnet publish 'src\Sticky.App\Sticky.App.csproj' -c Release -r win-x64 --self-contained true `
         -p:PublishProfile=Portable -p:StickyPortable=true -p:DebugType=None -p:DebugSymbols=false `
         -m:1 -nr:false -p:UseSharedCompilation=false --artifacts-path $publishArtifacts -o $publishDirectory --nologo
     if ($LASTEXITCODE -ne 0) { throw 'Portable publish failed.' }
+    & $dotnet publish 'src\Sticky.Launcher\Sticky.Launcher.csproj' -c Release -r win-x64 --self-contained true `
+        -p:DebugType=None -p:DebugSymbols=false -m:1 -nr:false -p:UseSharedCompilation=false `
+        --artifacts-path $publishArtifacts -o $launcherDirectory --nologo
+    if ($LASTEXITCODE -ne 0) { throw 'Stable launcher publish failed.' }
 } finally { Pop-Location }
 
 New-Item -ItemType Directory -Path $OutputDirectory | Out-Null
-Copy-Item -LiteralPath (Join-Path $publishDirectory 'Sticky.exe') -Destination (Join-Path $OutputDirectory 'Sticky.exe')
+Copy-Item -LiteralPath (Join-Path $launcherDirectory 'Sticky.Launcher.exe') -Destination (Join-Path $OutputDirectory 'Sticky.exe')
+New-Item -ItemType Directory -Path (Join-Path $OutputDirectory 'tools\runtime') -Force | Out-Null
+Copy-Item -LiteralPath (Join-Path $publishDirectory 'Sticky.exe') -Destination (Join-Path $OutputDirectory 'tools\runtime\Sticky.exe')
 Expand-Archive -LiteralPath $gitZip -DestinationPath (Join-Path $OutputDirectory 'tools\git')
 Expand-Archive -LiteralPath $gcmZip -DestinationPath (Join-Path $OutputDirectory 'tools\gcm')
 Copy-Item -LiteralPath $gcmLicense -Destination (Join-Path $OutputDirectory 'tools\gcm\LICENSE.txt')
@@ -73,11 +80,18 @@ $manifest = [ordered]@{
     dotnetRuntime = $runtimeVersion; dataDirectory = 'Data'; gitVersion = '2.56.0.windows.3'; gcmVersion = '3.0.1'
     gitSource = $gitUrl; gitArchiveSha256 = $gitSha; gcmSource = $gcmUrl; gcmArchiveSha256 = $gcmSha
     executableSha256 = (Get-FileHash -LiteralPath (Join-Path $OutputDirectory 'Sticky.exe') -Algorithm SHA256).Hash.ToLowerInvariant()
+    formatVersion = 2; launcherProtocol = 1; dataSchemaVersion = 1; runtimePath = 'tools/runtime/Sticky.exe'
+    runtimeSha256 = (Get-FileHash -LiteralPath (Join-Path $OutputDirectory 'tools\runtime\Sticky.exe') -Algorithm SHA256).Hash.ToLowerInvariant()
 }
-$manifest | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $OutputDirectory 'release-manifest.json') -Encoding utf8
+$programFiles = [ordered]@{}
+Get-ChildItem -LiteralPath $OutputDirectory -Recurse -File | ForEach-Object {
+    $relative = $_.FullName.Substring($OutputDirectory.TrimEnd('\').Length + 1).Replace('\', '/')
+    $programFiles[$relative] = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+}
+$manifest.files = $programFiles
+[System.IO.File]::WriteAllText((Join-Path $OutputDirectory 'release-manifest.json'), ($manifest | ConvertTo-Json -Depth 4), [System.Text.UTF8Encoding]::new($false))
 if (Test-Path -LiteralPath (Join-Path $OutputDirectory 'Data')) { throw 'A release must not contain personal data.' }
-Add-Type -AssemblyName System.IO.Compression.FileSystem
-[System.IO.Compression.ZipFile]::CreateFromDirectory($OutputDirectory, $zipPath, [System.IO.Compression.CompressionLevel]::Optimal, $true)
+New-StickyPortableArchive -Directory $OutputDirectory -ZipPath $zipPath -PackageName $packageName
 $zipHash = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
 [System.IO.File]::WriteAllText($zipPath + '.sha256', $zipHash + ' *' + [System.IO.Path]::GetFileName($zipPath) + [Environment]::NewLine)
 Write-Output "Portable folder: $OutputDirectory"

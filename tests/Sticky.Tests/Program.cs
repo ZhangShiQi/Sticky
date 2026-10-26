@@ -27,6 +27,10 @@ internal static partial class Program
     {
         if (args.Length >= 3 && args[0] == "--instance-probe") return InstanceProbe(args);
         if (args.Length == 2 && args[0] == "--update-ui-context-probe") return UpdateUiContextProbe(args[1]);
+        if (args.Length >= 5 && args[0] == "--launcher-worker") return LauncherWorker(args);
+        if (args.Length > 2 && args[0] == "--health-probe") return HealthProbe(args);
+        if (args.Length == 3 && args[0] == "--portable-update-smoke") return PortableUpdateSmoke(args[1], args[2]);
+        if (args.Length >= 2 && args[0] == "--legacy-probe") return LegacyProbe(args[1]);
         _root = Path.GetFullPath(args.Length > 0 ? args[0] : Path.Combine(Path.GetTempPath(), "Sticky.Tests", Guid.NewGuid().ToString("N")));
         Directory.CreateDirectory(_root);
         GitIntegrationTests.ToolBaseDirectory = args.Length > 1 ? Path.GetFullPath(args[1]) : null;
@@ -82,12 +86,24 @@ internal static partial class Program
         Run("Application singleton blocks other processes and forwards activation", SingleInstance);
         Run("Update releases use stable numeric versions and trusted assets with SHA256", UpdateReleaseValidation);
         Run("Update downloads reject corruption, unsafe redirects, truncation and cancellation", UpdateDownloadValidation);
+        Run("Update interrupted downloads preserve verified cache and retry after network recovery", UpdateInterruptedDownloads);
         Run("Private update login authenticates only official APIs and never redirect hosts", PrivateUpdateAuthentication);
         Run("Update archives reject traversal, personal data, duplicate paths and symlinks", UpdateArchiveValidation);
         Run("Update installation preserves portable and external data with program backups", UpdateInstallPreservesData);
         Run("Update installation rolls back all changed program components on failure", UpdateInstallRollback);
+        Run("Update failure at every component restores original bytes and permits retry", UpdateRollbackEveryEntry);
+        Run("Update real Windows file locks before and after backup restore the installation", UpdateRealFileLocks);
+        Run("Update rejected packages never start replacement or change personal files", UpdateRejectedPackagesPreserveInstallation);
+        Run("Update consecutive versions retain new edits and each preceding program backup", UpdateConsecutiveVersions);
         Run("Update installer completes under the WPF startup synchronization context", UpdateUiContext);
         Run("Update preferences persist and offline checks never block local recording", UpdatePreferencesAndOffline);
+        Run("Launcher confirms startup and restores portable or external data on crash and timeout", LauncherSuccessAndFailures);
+        Run("Launcher survives forced termination at every update transaction phase", LauncherForcedInterruptionMatrix);
+        Run("Launcher recovery can itself be terminated and safely repeated", LauncherInterruptedRecovery);
+        Run("Launcher validates recovery snapshots before writes and recovers torn state", LauncherCorruptionAndSnapshots);
+        Run("Launcher protects first startup and can bridge back to a verified legacy backup", LauncherBootstrapAndLegacyBridge);
+        Run("Launcher late startup failure rolls back program without overwriting new edits", LauncherLateFailurePreservesNewEdits);
+        Run("Launcher rejects incompatible schema, protocol, bad components and unreadable snapshots", LauncherInvalidCandidates);
         if (GitIntegrationTests.ToolBaseDirectory is not null)
             Run("Bundled native Git and GCM run with no system Git or dotnet on PATH", () => GitTest("portable-tools", GitIntegrationTests.PortableTools));
         Console.WriteLine($"\n{_passed} passed; {_failed} failed. Artifacts: {_root}");

@@ -101,14 +101,55 @@ internal static partial class Program
         Check(await emptyPublic.CheckAsync("0.2.0", CancellationToken.None) is null, "Empty accessible repository should not offer an update.");
     }).GetAwaiter().GetResult();
 
-    private static string CreateUpdateZip(string name, string? extra = null, string version = "0.3.0", bool wrongManifest = false, bool duplicate = false)
+    private sealed class InterruptedUpdateStream(byte[] bytes, Action interrupt) : MemoryStream(bytes)
+    {
+        private bool _read;
+        public override bool CanSeek => false; // No Content-Length: validate actual streamed bytes.
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken token = default)
+        {
+            if (_read) { interrupt(); token.ThrowIfCancellationRequested(); }
+            _read = true;
+            return base.ReadAsync(buffer[..Math.Min(buffer.Length, 2)], token);
+        }
+    }
+
+    private static void UpdateInterruptedDownloads() => Task.Run(async () =>
+    {
+        var bytes = Encoding.UTF8.GetBytes("test");
+        var release = UpdateRelease.Parse(ReleaseJson(digest: "sha256:" + Convert.ToHexStringLower(SHA256.HashData(bytes))), "0.2.0")!;
+        foreach (var scenario in new[] { "disconnect", "cancel-midstream", "oversize", "server-error", "redirect-loop" })
+        {
+            var destination = Path.Combine(_root, "update-interrupted-" + scenario, "package.zip");
+            Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+            File.WriteAllText(destination, "previous verified package");
+            using var cancel = new CancellationTokenSource();
+            using var client = new UpdateClient(new UpdateHttp(_ => scenario switch
+            {
+                "server-error" => new(HttpStatusCode.ServiceUnavailable),
+                "redirect-loop" => new(HttpStatusCode.Redirect) { Headers = { Location = release.DownloadUrl } },
+                _ => new(HttpStatusCode.OK) { Content = new StreamContent(new InterruptedUpdateStream(
+                    scenario == "oversize" ? Encoding.UTF8.GetBytes("test-extra") : bytes, () =>
+                    {
+                        if (scenario == "disconnect") throw new IOException("Connection lost after receiving bytes");
+                        if (scenario == "cancel-midstream") cancel.Cancel();
+                    })) }
+            }));
+            ExpectUpdateFailure(() => client.DownloadAsync(release, destination, null, cancel.Token).GetAwaiter().GetResult());
+            Check(File.ReadAllText(destination) == "previous verified package" && !File.Exists(destination + ".partial"),
+                "Interrupted download replaced the good cache or retained a partial file: " + scenario);
+            using var retry = new UpdateClient(new UpdateHttp(_ => new(HttpStatusCode.OK) { Content = new ByteArrayContent(bytes) }));
+            await retry.DownloadAsync(release, destination, null, CancellationToken.None);
+            Check(File.ReadAllBytes(destination).SequenceEqual(bytes), "Retry failed after " + scenario);
+        }
+    }).GetAwaiter().GetResult();
+
+    private static string CreateUpdateZip(string name, string? extra = null, string version = "0.3.0", bool wrongManifest = false, bool duplicate = false, string exe = "new executable")
     {
         var directory = Path.Combine(_root, name); Directory.CreateDirectory(directory);
         var path = Path.Combine(directory, "package.zip");
         using var zip = ZipFile.Open(path, ZipArchiveMode.Create);
         var prefix = $"Sticky-{version}-win-x64-portable/";
         void Add(string relative, string content) { using var writer = new StreamWriter(zip.CreateEntry(prefix + relative).Open()); writer.Write(content); }
-        var exe = "new executable";
         Add("Sticky.exe", exe);
         Add("portable.flag", "portable");
         Add("tools/git/cmd/git.exe", "new git");
@@ -180,6 +221,121 @@ internal static partial class Program
         ExpectUpdateFailure(() => UpdateInstaller.Apply(plan with { Sha256 = new string('0', 64) }));
         ExpectUpdateFailure(() => UpdatePackage.ValidateTarget(plan.TargetDirectory, plan.TargetDirectory));
         ExpectUpdateFailure(() => UpdatePackage.ValidateTarget(plan.TargetDirectory, Path.Combine(plan.TargetDirectory, "assets", "data")));
+    }
+
+    private static Dictionary<string, string> UpdateFileSnapshot(string root) => Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
+        .Where(path => !Path.GetRelativePath(root, path).Split(Path.DirectorySeparatorChar)[0].StartsWith(".sticky-update-", StringComparison.Ordinal))
+        .ToDictionary(path => Path.GetRelativePath(root, path), path => Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(path))), StringComparer.OrdinalIgnoreCase);
+
+    private static void AssertUpdateSnapshot(string root, Dictionary<string, string> expected, string scenario)
+    {
+        var actual = UpdateFileSnapshot(root);
+        Check(actual.Count == expected.Count && expected.All(pair => actual.TryGetValue(pair.Key, out var hash) && hash == pair.Value),
+            scenario + ": program, personal files or note/image bytes changed.");
+    }
+
+    private static void UpdateRollbackEveryEntry()
+    {
+        foreach (var failedEntry in UpdatePackage.ManagedEntries)
+        {
+            var plan = CreateInstallPlan("update-rollback-entry-" + Array.IndexOf(UpdatePackage.ManagedEntries, failedEntry));
+            // Exercise replacement of every existing component, including components absent from older installations.
+            foreach (var entry in UpdatePackage.ManagedEntries)
+            {
+                var path = Path.Combine(plan.TargetDirectory, entry);
+                if (File.Exists(path) || Directory.Exists(path)) continue;
+                if (entry is "tools" or "licenses" or "assets")
+                { Directory.CreateDirectory(path); File.WriteAllText(Path.Combine(path, "old.txt"), "original " + entry); }
+                else File.WriteAllText(path, "original " + entry);
+            }
+            var original = UpdateFileSnapshot(plan.TargetDirectory);
+            var visited = new List<string>();
+            ExpectUpdateFailure(() => UpdateInstaller.Apply(plan, entry =>
+            {
+                visited.Add(entry);
+                if (entry == failedEntry) throw new IOException("Injected failure at " + entry);
+            }));
+            Check(visited.Last() == failedEntry, "Failure injection did not reach " + failedEntry);
+            AssertUpdateSnapshot(plan.TargetDirectory, original, failedEntry);
+            UpdateInstaller.Apply(plan);
+            Check(File.ReadAllText(Path.Combine(plan.TargetDirectory, "Sticky.exe")) == "new executable", "Retry failed after " + failedEntry);
+            Check(File.ReadAllText(Path.Combine(plan.DataDirectory, "notes.json")) == "private notes"
+                && File.ReadAllText(Path.Combine(plan.DataDirectory, "assets", "image.png")) == "private image", "Retry changed user data.");
+        }
+    }
+
+    private static void UpdateRealFileLocks()
+    {
+        foreach (var lockStagedFile in new[] { false, true })
+        {
+            var plan = CreateInstallPlan("update-real-lock-" + lockStagedFile);
+            var original = UpdateFileSnapshot(plan.TargetDirectory);
+            FileStream? locked = null;
+            try
+            {
+                if (!lockStagedFile) locked = new FileStream(Path.Combine(plan.TargetDirectory, "Sticky.exe"), FileMode.Open, FileAccess.Read, FileShare.Read);
+                ExpectUpdateFailure(() => UpdateInstaller.Apply(plan, entry =>
+                {
+                    if (!lockStagedFile || entry != "Sticky.exe") return;
+                    var stage = Directory.EnumerateDirectories(plan.TargetDirectory, ".sticky-update-stage-*").Single();
+                    locked = new FileStream(Path.Combine(stage, "Sticky.exe"), FileMode.Open, FileAccess.Read, FileShare.Read);
+                }));
+            }
+            finally { locked?.Dispose(); }
+            // Locking the staged executable fails AFTER the old executable was moved to backup.
+            AssertUpdateSnapshot(plan.TargetDirectory, original, "Real Windows file lock (stage=" + lockStagedFile + ")");
+            UpdateInstaller.Apply(plan);
+            Check(File.ReadAllText(Path.Combine(plan.TargetDirectory, "Sticky.exe")) == "new executable", "Could not retry after file unlock.");
+        }
+    }
+
+    private static void UpdateRejectedPackagesPreserveInstallation()
+    {
+        foreach (var scenario in new[] { "bad-hash", "missing-zip", "wrong-version", "missing-component", "tampered-exe", "truncated-zip" })
+        {
+            var plan = CreateInstallPlan("update-rejected-" + scenario);
+            var original = UpdateFileSnapshot(plan.TargetDirectory);
+            if (scenario == "missing-zip") File.Delete(plan.PackagePath);
+            else if (scenario == "truncated-zip") File.WriteAllBytes(plan.PackagePath, [0x50, 0x4b, 3, 4]);
+            else if (scenario is "missing-component" or "tampered-exe")
+            {
+                using var zip = ZipFile.Open(plan.PackagePath, ZipArchiveMode.Update);
+                var entry = zip.GetEntry("Sticky-0.3.0-win-x64-portable/" + (scenario == "missing-component" ? "tools/gcm/git-credential-manager.exe" : "Sticky.exe"))!;
+                entry.Delete();
+                if (scenario != "missing-component")
+                { using var writer = new StreamWriter(zip.CreateEntry("Sticky-0.3.0-win-x64-portable/Sticky.exe").Open()); writer.Write("corrupted executable"); }
+            }
+            if (scenario == "bad-hash") plan = plan with { Sha256 = new string('0', 64) };
+            else if (File.Exists(plan.PackagePath)) plan = plan with { Sha256 = Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(plan.PackagePath))) };
+            if (scenario == "wrong-version") plan = plan with { Version = "0.4.0" };
+            var enteredInstall = false;
+            ExpectUpdateFailure(() => UpdateInstaller.Apply(plan, _ => enteredInstall = true));
+            Check(!enteredInstall, "Invalid package reached file replacement: " + scenario);
+            AssertUpdateSnapshot(plan.TargetDirectory, original, scenario);
+        }
+    }
+
+    private static void UpdateConsecutiveVersions()
+    {
+        var initial = CreateInstallPlan("update-consecutive");
+        var previousProgram = "old executable";
+        foreach (var version in new[] { "0.3.0", "0.4.0", "0.5.0" })
+        {
+            // Stand-in program payloads exercise installation; this does not claim to boot a real portable exe.
+            var payload = "executable " + version;
+            var zip = CreateUpdateZip("update-consecutive-package-" + version, version: version, exe: payload);
+            File.AppendAllText(Path.Combine(initial.DataDirectory, "notes.json"), "\nedit before " + version);
+            var dataBefore = UpdateFileSnapshot(initial.DataDirectory);
+            var plan = initial with { Version = version, PackagePath = zip, Sha256 = Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(zip))) };
+            var backup = UpdateInstaller.Apply(plan);
+            Check(File.ReadAllText(Path.Combine(initial.TargetDirectory, "Sticky.exe")) == payload, "Consecutive update installed the wrong program.");
+            Check(File.ReadAllText(Path.Combine(backup, "Sticky.exe")) == previousProgram, "Consecutive update lost the immediately preceding program.");
+            using var manifest = JsonDocument.Parse(File.ReadAllText(Path.Combine(initial.TargetDirectory, "release-manifest.json")));
+            Check(manifest.RootElement.GetProperty("version").GetString() == version, "Consecutive update retained stale metadata.");
+            AssertUpdateSnapshot(initial.DataDirectory, dataBefore, "Upgrade to " + version);
+            previousProgram = payload;
+        }
+        Check(Directory.EnumerateDirectories(initial.TargetDirectory, ".sticky-update-backup-*").Count() == 3, "Consecutive updates overwrote program recovery backups.");
     }
     private static void UpdatePreferencesAndOffline()
     {

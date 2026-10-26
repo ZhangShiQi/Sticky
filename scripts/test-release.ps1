@@ -27,6 +27,12 @@ if ($global:StickyReleaseTestState.FailTests) { throw 'Simulated test failure' }
 '@)
 [IO.File]::WriteAllText((Join-Path $fixture 'scripts\test-release.ps1'), '# Fixture publication checks do not recurse.')
 [IO.File]::WriteAllText((Join-Path $fixture 'scripts\test-publish-release.ps1'), '# Fixture API checks do not recurse.')
+[IO.File]::WriteAllText((Join-Path $fixture 'scripts\test-package-archive.ps1'), '# Fixture archive checks do not recurse.')
+[IO.File]::WriteAllText((Join-Path $fixture 'scripts\test-portable-update.ps1'), @'
+param($Package,$TestAssembly)
+$global:StickyReleaseTestState.Events.Add('portable-tests')
+if ($global:StickyReleaseTestState.FailPortable) { throw 'Simulated portable update test failure' }
+'@)
 [IO.File]::WriteAllText((Join-Path $fixture 'scripts\package-portable.ps1'), @'
 param($OutputDirectory)
 $global:StickyReleaseTestState.Events.Add('package')
@@ -39,10 +45,12 @@ $hash = (Get-FileHash -LiteralPath ($OutputDirectory + '.zip')).Hash.ToLowerInva
 $global:StickyReleaseTestRoot = $fixture
 $script:cases = 0
 $global:StickyReleaseTestState = $null
+$originalTestFilter = $env:STICKY_TEST_FILTER
+$env:STICKY_TEST_FILTER = $null
 function Reset-State {
     $global:StickyReleaseTestState = @{ Calls = [Collections.Generic.List[string]]::new(); Dirty = $false; RemoteVersion = '0.1.9';
         LocalTag = $false; OtherCommit = $false; RemoteAhead = $false; FailPush = $false; Branch = 'main';
-        Events = [Collections.Generic.List[string]]::new(); ReleasePublished = $false; Draft = $false; RemoteSameHead = $false; FailTests = $false; FailUpload = $false }
+        Events = [Collections.Generic.List[string]]::new(); ReleasePublished = $false; Draft = $false; RemoteSameHead = $false; FailTests = $false; FailUpload = $false; FailPortable = $false }
 }
 # A scoped Git test double: no real Git command, credential lookup or network request is executed.
 function git {
@@ -99,6 +107,12 @@ Expect-Refusal 'not clean'
 Assert-Release (!$global:StickyReleaseTestState.LocalTag) 'Dirty worktree created a version tag.'
 Pass 'Uncommitted files block publication'
 
+Reset-State; $env:STICKY_TEST_FILTER = 'Update'
+Expect-Refusal 'complete test suite is required'
+Assert-Release ($global:StickyReleaseTestState.Events.Count -eq 0 -and !$global:StickyReleaseTestState.LocalTag) 'Filtered release read credentials, built or tagged.'
+$env:STICKY_TEST_FILTER = $null
+Pass 'A filtered test run can never authorize a release'
+
 Reset-State; $global:StickyReleaseTestState.RemoteVersion = '0.2.0'
 Expect-Refusal 'another commit'
 Reset-State; $global:StickyReleaseTestState.RemoteVersion = '0.10.0'
@@ -124,6 +138,11 @@ Expect-Refusal 'Simulated test failure'
 Assert-Release (!$global:StickyReleaseTestState.LocalTag -and !$global:StickyReleaseTestState.Events.Contains('push') -and !$global:StickyReleaseTestState.Events.Contains('upload')) 'Failed tests pushed or published files.'
 Pass 'Local test failures stop before tagging, pushing or uploading'
 
+Reset-State; $global:StickyReleaseTestState.FailPortable = $true
+Expect-Refusal 'Simulated portable update test failure'
+Assert-Release (!$global:StickyReleaseTestState.LocalTag -and !$global:StickyReleaseTestState.Events.Contains('push') -and !$global:StickyReleaseTestState.Events.Contains('upload')) 'Failed real portable checks pushed or published files.'
+Pass 'Real portable update failures block tags, push and publication'
+
 Reset-State; $global:StickyReleaseTestState.FailPush = $true
 Expect-Refusal 'Push failed'
 Assert-Release $global:StickyReleaseTestState.LocalTag 'Push failure removed the retryable local tag.'
@@ -144,9 +163,9 @@ Invoke-Fixture
 Assert-Release ($global:StickyReleaseTestState.Calls.Contains('push --atomic origin 1111111111111111111111111111111111111111:refs/heads/main refs/tags/v0.2.0:refs/tags/v0.2.0')) 'Branch and tag were not pushed atomically from the same commit.'
 Assert-Release (@($global:StickyReleaseTestState.Calls | Where-Object { $_ -match '(^| )(--force|--force-with-lease|commit|add|delete)( |$)' }).Count -eq 0) 'Release performed an unexpected write.'
 Pass 'Clean releases push exactly main and the version tag without force'
-Assert-Release (($global:StickyReleaseTestState.Events -join ',') -eq 'credentials,tests,package,push,upload') 'Local publish operations ran in the wrong order.'
+Assert-Release (($global:StickyReleaseTestState.Events -join ',') -eq 'credentials,tests,package,portable-tests,push,upload') 'Local publish operations ran in the wrong order.'
 Pass 'Tests and local packaging complete before push and upload'
 
 Write-Output "$script:cases release workflow checks passed. No real repository was changed."
 }
-finally { Remove-Variable StickyReleaseTestState,StickyReleaseTestRoot -Scope Global -ErrorAction SilentlyContinue }
+finally { $env:STICKY_TEST_FILTER = $originalTestFilter; Remove-Variable StickyReleaseTestState,StickyReleaseTestRoot -Scope Global -ErrorAction SilentlyContinue }

@@ -17,7 +17,7 @@ public static class UpdatePackage
     }
     public static string Extract(string archive, string destination, string version)
     {
-        UpdateRelease.ParseVersion(version);
+        Sticky.UpdateEngine.VersionLayout.ParseVersion(version);
         if (Directory.Exists(destination)) throw new IOException("更新暂存目录已存在。");
         using var zip = ZipFile.OpenRead(archive);
         var prefix = $"Sticky-{version}-win-x64-portable/";
@@ -64,6 +64,8 @@ public static class UpdatePackage
         using var executable = File.OpenRead(Path.Combine(destination, "Sticky.exe"));
         var exeHash = Convert.ToHexStringLower(SHA256.HashData(executable));
         if (m.GetProperty("executableSha256").GetString() != exeHash) throw new InvalidDataException("更新程序校验失败。");
+        if (m.TryGetProperty("formatVersion", out var format) && format.GetInt32() == 2)
+            Sticky.UpdateEngine.VersionLayout.Validate(destination, version);
         return destination;
     }
 

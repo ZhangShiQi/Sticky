@@ -10,10 +10,12 @@
     <ApplicationIcon>Assets\Sticky.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="..\Sticky.UpdateEngine\Sticky.UpdateEngine.csproj" />
     <ProjectReference Include="..\Sticky.Core\Sticky.Core.csproj" />
     <ProjectReference Include="..\Sticky.Storage\Sticky.Storage.csproj" />
     <ProjectReference Include="..\Sticky.Sync.Git\Sticky.Sync.Git.csproj" />
   </ItemGroup>
+  <ItemGroup><Compile Remove="Updates\UpdatePackage.cs" /><Compile Remove="SingleInstanceHost.cs" /></ItemGroup>
   <ItemGroup><Using Remove="System.Windows.Forms" /><Using Remove="System.Drawing" /></ItemGroup>
   <ItemGroup><Resource Include="Assets\Sticky.ico" /><Resource Include="Assets\Sticky.svg" /></ItemGroup>
   <ItemGroup Condition="'$(StickyPortable)' == 'true'"><AssemblyMetadata Include="StickyPortable" Value="true" /></ItemGroup>

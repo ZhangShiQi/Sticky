@@ -4,6 +4,7 @@ using System.IO;
 using System.Text.Json;
 using System.Windows.Threading;
 using Sticky.Storage;
+using Sticky.UpdateEngine;
 
 namespace Sticky.App.Updates;
 
@@ -27,7 +28,7 @@ public sealed class UpdateCoordinator : INotifyPropertyChanged, IDisposable
     public bool IsBusy { get; private set; }
     public bool CanCheck => !IsBusy;
     public bool CanInstall => !IsBusy && Available is not null && _package is not null && SupportsInstall;
-    public bool SupportsInstall => AppPaths.IsPortableBuild && string.Equals(Path.GetFileName(Environment.ProcessPath), "Sticky.exe", StringComparison.OrdinalIgnoreCase);
+    public bool SupportsInstall => AppPaths.IsPortableBuild && LauncherContext.Root is not null;
     public UpdateRelease? Available { get; private set; }
     public string Status { get; private set; } = "等待检查更新";
     public string Details { get; private set; } = "自动检查正式版本；校验下载后，在保存便签并退出时更新。";
@@ -89,6 +90,12 @@ public sealed class UpdateCoordinator : INotifyPropertyChanged, IDisposable
                 return;
             }
             Available = release; _package = null;
+            if (LauncherContext.Root is not null && LauncherStore.IsRejected(LauncherContext.Root, release.Sha256))
+            {
+                Status = "此版本启动失败，已停止重复更新";
+                Details = "已退回可用版本并保留便签。相同更新包不会再次自动安装，请等待修复版本。";
+                return;
+            }
             if (!SupportsInstall)
             {
                 Status = "发现新版本 " + release.Version;
@@ -106,6 +113,7 @@ public sealed class UpdateCoordinator : INotifyPropertyChanged, IDisposable
             {
                 var verified = Path.Combine(directory, "verified");
                 UpdatePackage.Extract(package, verified, release.Version);
+                VersionLayout.Validate(verified, release.Version);
                 Directory.Delete(verified, true);
             }, token);
             token.ThrowIfCancellationRequested();
@@ -137,8 +145,8 @@ public sealed class UpdateCoordinator : INotifyPropertyChanged, IDisposable
             return true;
         }
         using var process = Process.GetCurrentProcess();
-        UpdateInstaller.Start(new InstallPlan(AppContext.BaseDirectory, _workspace.Store.Root, _package!, Available!.Sha256,
-            Available.Version, process.Id, process.StartTime.ToUniversalTime().Ticks, false));
+        LauncherStore.Queue(new UpdateRequest(LauncherContext.Root!, _workspace.Store.Root, _package!, Available!.Sha256,
+            Available.Version, process.Id, process.StartTime.ToUniversalTime().Ticks));
         _package = null;
         return true;
     }

@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Windows;
 using Sticky.App.Updates;
+using Sticky.UpdateEngine;
 
 namespace Sticky.App;
 
@@ -16,7 +17,7 @@ public partial class App : Application
     private System.Drawing.Icon? _trayIcon;
     public bool StartWorkspaceOnStartup { get; set; } = true;
 
-    protected override void OnStartup(StartupEventArgs e)
+    protected override async void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
         if (!StartWorkspaceOnStartup) return;
@@ -25,10 +26,29 @@ public partial class App : Application
             Shutdown(UpdateInstaller.Run(e.Args[1]));
             return;
         }
+        StartupHandshake? handshake = null;
+        var managedStartup = e.Args.Contains("--startup-pipe", StringComparer.Ordinal);
+        using var startupTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));
         try
         {
+            if (LauncherContext.ConfigureOrRedirect(e.Args)) { Shutdown(); return; }
+            if (managedStartup)
+            {
+                if (LauncherContext.Root is null) throw new IOException("启动确认缺少稳定启动器。");
+                handshake = await StartupHandshake.ConnectAsync(LauncherContext.Argument(e.Args, "--startup-pipe")!,
+                    LauncherContext.Argument(e.Args, "--startup-nonce") ?? throw new IOException("缺少启动随机码。"), startupTimeout.Token);
+            }
             var startup = e.Args.Contains("--startup", StringComparer.Ordinal);
-            _instance = new SingleInstanceHost();
+            var testKey = LauncherContext.Argument(e.Args, "--test-instance-key");
+            if (testKey is not null)
+            {
+                var testData = AppPaths.ResolveDataDirectory(e.Args);
+                if (!testKey.StartsWith("Sticky.Tests.", StringComparison.Ordinal)
+                    || !File.Exists(Path.Combine(testData, ".sticky-update-test"))
+                    || File.ReadAllText(Path.Combine(testData, ".sticky-update-test")) != testKey)
+                    throw new IOException("隔离测试参数只能用于明确标记的测试数据目录。");
+            }
+            _instance = new SingleInstanceHost(testKey);
             if (!_instance.IsPrimary)
             {
                 if (!startup) _instance.NotifyExistingAsync().GetAwaiter().GetResult();
@@ -49,11 +69,29 @@ public partial class App : Application
                 return;
             }
             _workspace = new StickyWorkspace(root);
+            _workspace.StartupPending = managedStartup;
             var main = new MainWindow(_workspace);
             MainWindow = main;
-            CreateTray(_workspace);
-            if (!startup) main.Show();
+            CreateTray(_workspace, visible: !managedStartup);
+            if (managedStartup)
+            {
+                // Render real WPF windows without exposing writable UI before the transaction commits.
+                main.IsEnabled = false; main.Opacity = 0; main.ShowActivated = false;
+            }
+            if (!startup || managedStartup) main.Show();
             _workspace.RestoreWindows();
+            if (managedStartup)
+            {
+                foreach (var window in _workspace.Windows.Values) { window.IsEnabled = false; window.Opacity = 0; }
+                await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+                await handshake!.ReadyAsync(startupTimeout.Token);
+                _workspace.StartupPending = false;
+                main.IsEnabled = true; main.Opacity = 1;
+                foreach (var window in _workspace.Windows.Values) { window.IsEnabled = true; window.Opacity = 1; }
+                if (startup) main.Hide();
+                else { main.ShowActivated = true; main.Activate(); }
+                _tray!.Visible = true;
+            }
             _workspace.Sync.Start();
             _workspace.Updates.Start();
             if (!startup && _workspace.Notes.Count == 0 && _workspace.Store.Warnings.Count == 0) _workspace.CreateNote();
@@ -64,9 +102,10 @@ public partial class App : Application
         {
             var log = Path.Combine(AppContext.BaseDirectory, "startup-error.log");
             try { File.WriteAllText(log, ex.ToString()); } catch (Exception logEx) when (logEx is IOException or UnauthorizedAccessException) { }
-            MessageBox.Show("无法启动 Sticky：\n" + ex.Message + "\n\n诊断日志：" + log, "Sticky", MessageBoxButton.OK, MessageBoxImage.Error);
+            if (!managedStartup) MessageBox.Show("无法启动 Sticky：\n" + ex.Message + "\n\n诊断日志：" + log, "Sticky", MessageBoxButton.OK, MessageBoxImage.Error);
             Shutdown(1);
         }
+        finally { if (handshake is not null) await handshake.DisposeAsync(); }
     }
 
     protected override void OnExit(ExitEventArgs e)
@@ -81,7 +120,7 @@ public partial class App : Application
         base.OnExit(e);
     }
 
-    private void CreateTray(StickyWorkspace workspace)
+    private void CreateTray(StickyWorkspace workspace, bool visible = true)
     {
         var menu = new System.Windows.Forms.ContextMenuStrip();
         void Add(string label, Action action) => menu.Items.Add(label, null, (_, _) => Dispatcher.BeginInvoke(action));
@@ -95,7 +134,7 @@ public partial class App : Application
         using (var icon = new System.Drawing.Icon(stream, System.Windows.Forms.SystemInformation.SmallIconSize))
             _trayIcon = (System.Drawing.Icon)icon.Clone();
         _tray = new System.Windows.Forms.NotifyIcon { Text = "Sticky · 本地便签", Icon = _trayIcon,
-            ContextMenuStrip = menu, Visible = true };
+            ContextMenuStrip = menu, Visible = visible };
         _tray.DoubleClick += (_, _) => Dispatcher.BeginInvoke(workspace.ShowManager);
         string? announcedVersion = null;
         workspace.Updates.PropertyChanged += (_, _) =>

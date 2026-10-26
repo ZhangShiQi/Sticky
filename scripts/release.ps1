@@ -48,7 +48,11 @@ try {
         return
     }
     if ($changes.Count) { throw 'Working tree is not clean. Review and commit the intended files first; this script never auto-commits files.' }
-    foreach ($required in @('scripts/publish-release.ps1', 'CHANGELOG.md', 'Directory.Build.props', 'scripts/package-portable.ps1')) {
+    if (![string]::IsNullOrWhiteSpace($env:STICKY_TEST_FILTER)) {
+        throw 'STICKY_TEST_FILTER must be empty for a release: the complete test suite is required.'
+    }
+    foreach ($required in @('scripts/publish-release.ps1', 'CHANGELOG.md', 'Directory.Build.props', 'scripts/package-portable.ps1',
+        'scripts/test-portable-update.ps1', 'src/Sticky.Launcher/Sticky.Launcher.csproj', 'src/Sticky.UpdateEngine/Sticky.UpdateEngine.csproj')) {
         Read-Git @('cat-file', '-e', "HEAD:$required") | Out-Null
     }
     $head = (Read-Git @('rev-parse', 'HEAD')) -join ''
@@ -86,6 +90,7 @@ try {
     $outputRoot = Join-Path $projectRoot ('.tools\releases\' + $Version + '-' + [guid]::NewGuid().ToString('N'))
     & (Join-Path $PSScriptRoot 'test-release.ps1')
     & (Join-Path $PSScriptRoot 'test-publish-release.ps1')
+    & (Join-Path $PSScriptRoot 'test-package-archive.ps1')
     & (Join-Path $projectRoot 'test.ps1') -ArtifactsPath (Join-Path $outputRoot 'test-build')
     $outputDirectory = Join-Path $outputRoot "Sticky-$Version-win-x64-portable"
     & (Join-Path $PSScriptRoot 'package-portable.ps1') -OutputDirectory $outputDirectory
@@ -95,6 +100,7 @@ try {
     $hash = (Get-FileHash -LiteralPath $package -Algorithm SHA256).Hash.ToLowerInvariant()
     $expected = ((Get-Content -LiteralPath ($package + '.sha256') -Raw).Trim() -split '\s+')[0]
     if ($hash -ne $expected) { throw 'Package checksum mismatch.' }
+    & (Join-Path $PSScriptRoot 'test-portable-update.ps1') -Package $package -TestAssembly (Join-Path $outputRoot 'test-build\bin\Sticky.Tests\release\Sticky.Tests.dll')
     if (((Read-Git @('rev-parse', 'HEAD')) -join '') -ne $head -or @(Read-Git @('status', '--porcelain', '--untracked-files=normal')).Count) {
         throw 'Source changed during testing/packaging. Commit intended changes and retry with a new package.'
     }

@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType><TargetFramework>net10.0-windows</TargetFramework>
+    <ApplicationIcon>..\Sticky.App\Assets\Sticky.ico</ApplicationIcon>
+    <ApplicationManifest>..\Sticky.App\app.manifest</ApplicationManifest>
+    <PublishSingleFile>true</PublishSingleFile><IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile><PublishTrimmed>false</PublishTrimmed>
+  </PropertyGroup>
+  <ItemGroup><ProjectReference Include="..\Sticky.UpdateEngine\Sticky.UpdateEngine.csproj" /></ItemGroup>
+</Project>

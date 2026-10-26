@@ -12,7 +12,7 @@ public sealed record GitOutput(int ExitCode, byte[] Bytes, string Error)
 public sealed class GitProcess
 {
     private readonly GitToolchain _toolchain;
-    public GitProcess(string? applicationDirectory = null) => _toolchain = GitToolchain.Resolve(applicationDirectory ?? AppContext.BaseDirectory);
+    public GitProcess(string? applicationDirectory = null) => _toolchain = GitToolchain.Resolve(applicationDirectory ?? AppContext.GetData("Sticky.ToolsDirectory") as string ?? AppContext.BaseDirectory);
 
     public async Task<GitOutput> RunAsync(string directory, IEnumerable<string> arguments, CancellationToken cancellationToken,
         byte[]? input = null, bool interactive = false, Dictionary<string, string>? environment = null, int maxBytes = 300 * 1024 * 1024)

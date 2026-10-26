@@ -19,6 +19,7 @@ public sealed class StickyWorkspace
     public Dictionary<Guid, NoteWindow> Windows { get; } = [];
     public event Action? Changed;
     public bool IsExiting { get; private set; }
+    public bool StartupPending { get; set; }
     public MainWindow? Manager { get; set; }
     public SearchWindow? Search { get; private set; }
     public SyncCoordinator Sync { get; }
@@ -29,7 +30,8 @@ public sealed class StickyWorkspace
     public StickyWorkspace(string root, StartupRegistration? startup = null)
     {
         Store = new NoteStore(root);
-        Startup = startup ?? new StartupRegistration(Environment.ProcessPath ?? System.IO.Path.Combine(AppContext.BaseDirectory, "Sticky.exe"), AppContext.BaseDirectory, Store.Root);
+        Startup = startup ?? new StartupRegistration(LauncherContext.Root is string launcherRoot ? System.IO.Path.Combine(launcherRoot, "Sticky.exe")
+            : Environment.ProcessPath ?? System.IO.Path.Combine(AppContext.BaseDirectory, "Sticky.exe"), LauncherContext.Root ?? AppContext.BaseDirectory, Store.Root);
         Notes = Store.LoadNotes();
         Groups = Store.LoadGroups();
         // Recover names for externally copied notes without dropping their membership.
@@ -67,6 +69,7 @@ public sealed class StickyWorkspace
         }
         var state = GetWindowState(note.Id);
         var window = new NoteWindow(this, note, state, near);
+        if (StartupPending) { window.IsEnabled = false; window.Opacity = 0; window.ShowActivated = false; }
         Windows.Add(note.Id, window);
         state.IsOpen = true;
         window.Show();
