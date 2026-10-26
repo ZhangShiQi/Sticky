@@ -78,20 +78,20 @@ public sealed class GitSyncEngine
                 FillAssets(local);
                 ValidateSnapshot(local);
                 // This remote revision has been integrated locally even if push is interrupted.
-                SyncJson.WriteAtomic(baselinePath, SyncJson.Bytes(remote));
+                SyncJson.WriteAtomic(baselinePath, SyncJson.Bytes(remote), _dataRoot);
                 baseline = remote;
                 var files = SerializeSnapshot(local);
                 var changed = files.Any(pair => !remoteFiles.TryGetValue(pair.Key, out var old) || !pair.Value.AsSpan().SequenceEqual(old));
                 if (!changed)
                 {
-                    SyncJson.WriteAtomic(baselinePath, SyncJson.Bytes(local));
+                    SyncJson.WriteAtomic(baselinePath, SyncJson.Bytes(local), _dataRoot);
                     return new SyncResult(conflictCount, false);
                 }
                 var commit = await CreateCommit(repo, target, parent, remoteFiles, files, cancellationToken);
                 var push = await _git.RunAsync(repo, ["push", "--porcelain", "origin", $"{commit}:refs/heads/{branch}"], cancellationToken, interactive: interactive);
                 if (push.ExitCode == 0)
                 {
-                    SyncJson.WriteAtomic(baselinePath, SyncJson.Bytes(local));
+                    SyncJson.WriteAtomic(baselinePath, SyncJson.Bytes(local), _dataRoot);
                     return new SyncResult(conflictCount, true);
                 }
                 var error = push.Error + "\n" + push.Text;
@@ -103,10 +103,11 @@ public sealed class GitSyncEngine
         finally { _gate.Release(); }
     }
 
-    private static SyncSnapshot ReadBaseline(string path)
+    private SyncSnapshot ReadBaseline(string path)
     {
-        if (!File.Exists(path) && !File.Exists(path + ".bak")) return new SyncSnapshot();
-        foreach (var candidate in new[] { path, path + ".bak" })
+        var candidates = new[] { path }.Concat(WorkspaceFiles.BackupCandidates(_dataRoot, path)).ToArray();
+        if (!candidates.Any(File.Exists)) return new SyncSnapshot();
+        foreach (var candidate in candidates)
         {
             try
             {
@@ -117,7 +118,7 @@ public sealed class GitSyncEngine
             }
             catch (Exception ex) when (ex is IOException or System.Text.Json.JsonException or InvalidDataException or ArgumentException) { }
         }
-        throw new InvalidDataException("同步基线无法读取。便签仍可在本地编辑，请从 device/sync 的基线备份恢复后重试。");
+        throw new InvalidDataException("同步基线无法读取。便签仍可在本地编辑，请从 backups/device/sync 的基线备份恢复后重试。");
     }
 
     private async Task<Dictionary<string, byte[]>> ReadFiles(string repo, string revision, CancellationToken token)

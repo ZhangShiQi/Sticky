@@ -111,7 +111,8 @@ public static class BackupService
             foreach (var path in written)
             {
                 if (File.Exists(path)) File.Delete(path);
-                if (File.Exists(path + ".bak")) File.Delete(path + ".bak");
+                foreach (var backup in WorkspaceFiles.BackupCandidates(store.Root, path))
+                    if (File.Exists(backup)) File.Delete(backup);
             }
             store.SaveGroups(originalGroups);
             throw;

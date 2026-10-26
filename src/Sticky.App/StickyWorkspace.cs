@@ -13,6 +13,7 @@ public sealed class StickyWorkspace
     public List<Note> Notes { get; }
     public List<NoteGroup> Groups { get; }
     public DeviceState Device { get; }
+    public EditorPreferences EditorPreferences { get; private set; }
     public Dictionary<Guid, NoteWindow> Windows { get; } = [];
     public event Action? Changed;
     public bool IsExiting { get; private set; }
@@ -31,6 +32,7 @@ public sealed class StickyWorkspace
             if (!Groups.Any(g => g.Id == id)) Groups.Add(new NoteGroup { Id = id, Name = "恢复的分组 " + id.ToString("N")[..8] });
         if (Groups.Count > 0) Store.SaveGroups(Groups);
         Device = Store.LoadDeviceState();
+        EditorPreferences = Store.LoadEditorPreferences();
         Sync = new SyncCoordinator(this);
     }
 
@@ -130,6 +132,17 @@ public sealed class StickyWorkspace
     public bool SaveAllNotes()
     {
         foreach (var window in Windows.Values.ToArray()) if (!window.SaveNow()) return false;
+        return true;
+    }
+
+    public bool UpdateEditorPreferences(EditorPreferences preferences)
+    {
+        NoteStore.ValidateEditorPreferences(preferences);
+        if (!SaveAllNotes()) return false;
+        var saved = new EditorPreferences { DefaultFontSize = preferences.DefaultFontSize, ParagraphSpacing = preferences.ParagraphSpacing };
+        Store.SaveEditorPreferences(saved);
+        EditorPreferences = saved;
+        foreach (var window in Windows.Values) window.ApplyEditorPreferences(saved);
         return true;
     }
 

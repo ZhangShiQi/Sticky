@@ -7,7 +7,7 @@
     <AssemblyName>Sticky</AssemblyName>
     <RootNamespace>Sticky.App</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <Version>0.1.4</Version>
+    <Version>0.1.5</Version>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Sticky.Core\Sticky.Core.csproj" />

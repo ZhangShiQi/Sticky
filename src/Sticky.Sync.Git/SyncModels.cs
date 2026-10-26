@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Sticky.Core;
+using Sticky.Storage;
 
 namespace Sticky.Sync.Git;
 
@@ -39,17 +40,7 @@ public static class SyncJson
     public static bool Equal<T>(T? a, T? b) => Bytes(a).AsSpan().SequenceEqual(Bytes(b));
     public static string Hash(byte[] bytes) => Convert.ToHexStringLower(SHA256.HashData(bytes));
     public static Guid StableId(string value) => new(SHA256.HashData(Encoding.UTF8.GetBytes(value)).AsSpan(0, 16));
-    public static void WriteAtomic(string path, byte[] bytes)
-    {
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        var temp = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
-        try
-        {
-            using (var file = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None)) { file.Write(bytes); file.Flush(true); }
-            if (File.Exists(path)) File.Replace(temp, path, path + ".bak"); else File.Move(temp, path);
-        }
-        finally { if (File.Exists(temp)) File.Delete(temp); }
-    }
+    public static void WriteAtomic(string path, byte[] bytes, string dataRoot) => WorkspaceFiles.WriteAtomic(dataRoot, path, bytes);
 }
 
 public sealed record MergeResult(SyncSnapshot Snapshot, int ConflictCount);

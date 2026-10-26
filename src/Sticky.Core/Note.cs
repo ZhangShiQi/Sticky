@@ -50,6 +50,8 @@ public sealed class NoteInline
     public bool Strike { get; set; }
     public string? Foreground { get; set; }
     public double FontSize { get; set; } = 16;
+    // null is a legacy note: its 16-point text is treated as the application's default size.
+    public bool? UsesDefaultFontSize { get; set; }
     public string? AssetId { get; set; }
     public double Width { get; set; } = 280;
 }
@@ -79,4 +81,11 @@ public sealed class GroupCatalog
 {
     public int SchemaVersion { get; set; } = 1;
     public List<NoteGroup> Groups { get; set; } = [];
+}
+
+public sealed class EditorPreferences
+{
+    public int SchemaVersion { get; set; } = 1;
+    public double DefaultFontSize { get; set; } = 16;
+    public double ParagraphSpacing { get; set; } = 8;
 }

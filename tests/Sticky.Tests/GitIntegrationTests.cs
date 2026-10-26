@@ -77,14 +77,23 @@ internal static class GitIntegrationTests
             [new NoteInline { Text = "需要同步的正文", Bold = true, Underline = true, Foreground = "#FF285A9C" }, new NoteInline { Kind = "image", AssetId = image, Width = 160 }] }] };
         f.A.Store.Save(note);
         f.A.Store.SaveDeviceState(new DeviceState());
-        SyncJson.WriteAtomic(Path.Combine(f.A.Store.Root, "device", "sync-settings.json"), SyncJson.Bytes(new { secret = "DO-NOT-UPLOAD" }));
+        f.A.Store.SaveEditorPreferences(new EditorPreferences { DefaultFontSize = 22, ParagraphSpacing = 12 });
+        f.B.Store.SaveEditorPreferences(new EditorPreferences { DefaultFontSize = 14, ParagraphSpacing = 0 });
+        SyncJson.WriteAtomic(Path.Combine(f.A.Store.Root, "device", "sync-settings.json"), SyncJson.Bytes(new { secret = "DO-NOT-UPLOAD" }), f.A.Store.Root);
         await f.A.Sync(); await f.B.Sync();
         var downloaded = f.B.Store.LoadNotes().Single();
         Check(downloaded.Title == note.Title && downloaded.GroupId == group.Id && downloaded.Blocks[0].Inlines[0].Underline, "Rich text or group did not sync.");
         Check(File.ReadAllBytes(f.B.Store.GetAssetPath(image)).AsSpan().SequenceEqual(File.ReadAllBytes(f.A.Store.GetAssetPath(image))), "Image bytes changed.");
         var tree = await Fixture.Git(f.Root, ["--git-dir", f.Remote, "ls-tree", "-r", "--name-only", "refs/heads/sticky-data"]);
-        Check(!tree.Contains("device/") && !tree.Contains(".bak") && tree.Split('\n').All(p => p.StartsWith("sticky-v1/", StringComparison.Ordinal)), "Device settings or backups leaked into Git.");
+        Check(!tree.Contains("device/") && !tree.Contains("backups/") && !tree.Contains(".bak") && tree.Split('\n').All(p => p.StartsWith("sticky-v1/", StringComparison.Ordinal)), "Device settings or backups leaked into Git.");
+        Check(f.B.Store.LoadEditorPreferences().DefaultFontSize == 14, "Sync overwrote a device's typography preferences.");
         Check(!(await f.B.Sync()).Uploaded, "An unchanged snapshot created another commit.");
+        var baseline = Directory.EnumerateFiles(Path.Combine(f.B.Store.Root, "device", "sync"), "baseline.json", SearchOption.AllDirectories).Single();
+        Check(File.Exists(WorkspaceFiles.BackupPath(f.B.Store.Root, baseline)), "Sync baseline was not backed up in the dedicated directory.");
+        File.WriteAllText(baseline, "{broken");
+        Check(!(await f.B.Sync()).Uploaded, "Recovering a corrupt sync baseline changed remote content.");
+        File.Delete(baseline);
+        Check(!(await f.B.Sync()).Uploaded, "A backup-only sync baseline was not recovered.");
     }
 
     public static async Task Conflict(string root)

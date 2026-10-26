@@ -1,18 +1,21 @@
 using System.Diagnostics;
 using System.IO;
+using System.Globalization;
 using System.Windows;
 using Microsoft.Win32;
 using Sticky.App.Synchronization;
 using Sticky.Storage;
+using Sticky.Core;
 
 namespace Sticky.App;
 
-public enum SettingsSection { Sync, Data, Application }
+public enum SettingsSection { Sync, Data, Typography, Application }
 
 public partial class SettingsWindow : Window
 {
     private readonly StickyWorkspace _workspace;
     public string DataPath => _workspace.Store.Root;
+    public string BackupsPath => _workspace.Store.BackupsDirectory;
     public string ApplicationVersion => "Sticky " + typeof(SettingsWindow).Assembly.GetName().Version?.ToString(3);
     public string StorageMode => AppPaths.IsPortableBuild || File.Exists(Path.Combine(AppContext.BaseDirectory, "portable.flag")) ? "便携模式 · 数据保存在程序目录旁" : "本地模式 · 数据保存在此设备";
 
@@ -22,12 +25,46 @@ public partial class SettingsWindow : Window
         InitializeComponent();
         DataContext = this;
         SyncHost.Content = new SyncSettingsView(workspace);
+        LoadTypographyFields(workspace.EditorPreferences);
     }
     public void SelectSection(SettingsSection section) => SettingsTabs.SelectedIndex = (int)section;
     private void OpenDataFolder(object sender, RoutedEventArgs e)
     {
         try { Process.Start(new ProcessStartInfo("explorer.exe") { ArgumentList = { DataPath }, UseShellExecute = true }); }
         catch (Exception ex) { StickyWorkspace.ShowError("无法打开数据目录", ex); }
+    }
+    private void OpenBackupsFolder(object sender, RoutedEventArgs e)
+    {
+        try { Process.Start(new ProcessStartInfo("explorer.exe") { ArgumentList = { BackupsPath }, UseShellExecute = true }); }
+        catch (Exception ex) { StickyWorkspace.ShowError("无法打开备份目录", ex); }
+    }
+    private void LoadTypographyFields(EditorPreferences preferences)
+    {
+        DefaultFontSizeBox.Text = preferences.DefaultFontSize.ToString("0.##", CultureInfo.CurrentCulture);
+        ParagraphSpacingBox.Text = preferences.ParagraphSpacing.ToString("0.##", CultureInfo.CurrentCulture);
+    }
+    private void SaveTypography(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            if (!double.TryParse(DefaultFontSizeBox.Text, NumberStyles.Float, CultureInfo.CurrentCulture, out var fontSize)
+                || !double.TryParse(ParagraphSpacingBox.Text, NumberStyles.Float, CultureInfo.CurrentCulture, out var spacing))
+                throw new InvalidDataException("请输入有效的字号和段落间距数值。");
+            if (!_workspace.UpdateEditorPreferences(new EditorPreferences { DefaultFontSize = fontSize, ParagraphSpacing = spacing }))
+                throw new IOException("存在未保存成功的便签，请先处理保存问题后重试。");
+            TypographyStatus.Foreground = System.Windows.Media.Brushes.DarkGreen;
+            TypographyStatus.Text = "已保存并应用到全部便签。";
+        }
+        catch (Exception ex)
+        {
+            TypographyStatus.Foreground = System.Windows.Media.Brushes.Firebrick;
+            TypographyStatus.Text = "未能应用：" + ex.Message;
+        }
+    }
+    private void ResetTypography(object sender, RoutedEventArgs e)
+    {
+        LoadTypographyFields(new EditorPreferences());
+        SaveTypography(sender, e);
     }
     private void ExportBackup(object sender, RoutedEventArgs e)
     {

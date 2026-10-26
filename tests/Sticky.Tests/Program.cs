@@ -15,7 +15,7 @@ using Sticky.Core;
 using Sticky.Storage;
 using Sticky.Sync.Git;
 
-internal static class Program
+internal static partial class Program
 {
     private static string _root = "";
     private static int _passed;
@@ -38,6 +38,10 @@ internal static class Program
         Run("Image assets are content-addressed; traversal is rejected", AssetSafety);
         Run("Rich document survives encode/decode including image and inherited styles", DocumentRoundTrip);
         Run("Paragraph layout stays identical after Enter and save/reopen", ParagraphLayout);
+        Run("Typography preferences apply live, persist, and preserve explicit font sizes", TypographyPreferences);
+        Run("Dedicated backups migrate legacy files without losing collisions or recovery", DedicatedBackups);
+        Run("Backup-only notes and groups recover from the dedicated directory", BackupOnlyRecovery);
+        Run("Invalid typography settings never replace saved preferences", InvalidTypography);
         Run("Missing image references survive subsequent saves", MissingImage);
         Run("ZIP backup round-trip and duplicate import preserve existing notes", ZipRoundTrip);
         Run("Unsafe ZIP paths are rejected before writing notes", UnsafeZip);
@@ -100,7 +104,7 @@ internal static class Program
         var path = Path.Combine(store.NotesDirectory, note.Id + ".json"); File.WriteAllText(path, "{truncated");
         var loaded = store.LoadNotes();
         Check(loaded.Single().Title == "项目想法 📝" && store.Warnings.Count == 1, "Backup not restored.");
-        Check(Directory.EnumerateFiles(store.NotesDirectory, "*.corrupt-*").Any(), "Corrupt original not retained.");
+        Check(Directory.EnumerateFiles(Path.Combine(store.BackupsDirectory, "corrupt", "notes"), "*.corrupt").Any(), "Corrupt original not retained.");
         Check(store.LoadNotes().Count == 1 && store.Warnings.Count == 0, "Restored file is still unreadable.");
     }
     private static void CorruptIsolation()
@@ -154,16 +158,16 @@ internal static class Program
     private static void ParagraphLayout()
     {
         foreach (var (caseName, useList, blankLine, fontSize) in new[]
-            { ("plain", false, false, 16.0), ("blank-line", false, true, 16.0), ("list", true, false, 16.0), ("large-font", false, false, 28.0) })
+            { ("plain", false, false, 16.0), ("blank-line", false, true, 16.0), ("list", true, false, 22.0), ("large-font", false, false, 28.0) })
         {
             var workspace = new StickyWorkspace(Path.Combine(_root, "paragraph-layout-" + caseName));
+            workspace.UpdateEditorPreferences(new EditorPreferences { DefaultFontSize = fontSize, ParagraphSpacing = caseName == "list" ? 0 : 12 });
             var main = new MainWindow(workspace); main.Show(); workspace.CreateNote();
             var note = workspace.Notes.Single(); var window = workspace.Windows[note.Id];
             try
             {
                 var editor = (RichTextBox)window.FindName("Editor");
                 window.Activate(); window.EnterEditMode();
-                editor.Document.FontSize = fontSize;
                 editor.AppendText("第一行内容");
                 editor.CaretPosition = editor.Document.ContentEnd.GetInsertionPosition(LogicalDirection.Backward);
                 if (useList) EditingCommands.ToggleBullets.Execute(null, editor);

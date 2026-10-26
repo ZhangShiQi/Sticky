@@ -56,7 +56,7 @@ public sealed class SyncCoordinator : INotifyPropertyChanged, IDisposable
             || branch.Split('/').Any(part => part.StartsWith('.') || part.EndsWith(".lock", StringComparison.Ordinal)))) throw new ArgumentException("同步分支名称无效。");
         var settings = new SyncSettings { Enabled = enabled, RemoteUrl = remote, Branch = branch.Length == 0 ? "sticky-data" : branch,
             LastSuccess = remote == Settings.RemoteUrl && branch == Settings.Branch ? Settings.LastSuccess : null };
-        SyncJson.WriteAtomic(_settingsPath, SyncJson.Bytes(settings));
+        SyncJson.WriteAtomic(_settingsPath, SyncJson.Bytes(settings), _workspace.Store.Root);
         Settings = settings; _failures = 0; _nextAttempt = DateTimeOffset.UtcNow.AddSeconds(15);
         SetStatus(enabled ? "已启用 · 等待同步" : "本地模式", enabled ? "可以点击「立即同步」完成首次登录；后台同步不会弹出登录窗口。" : "同步已停用，本地便签和远端数据均保留。");
         Notify();
@@ -92,7 +92,7 @@ public sealed class SyncCoordinator : INotifyPropertyChanged, IDisposable
                 }, DispatcherPriority.Background, ct).Task;
             }, token, interactive), token);
             Settings.LastSuccess = DateTimeOffset.UtcNow;
-            SyncJson.WriteAtomic(_settingsPath, SyncJson.Bytes(Settings));
+            SyncJson.WriteAtomic(_settingsPath, SyncJson.Bytes(Settings), _workspace.Store.Root);
             _failures = 0; _nextAttempt = DateTimeOffset.UtcNow.AddSeconds(60);
             var count = result.ConflictCount + uiConflicts;
             var detail = count > 0 ? $"已保留 {count} 个冲突副本，可在便签管理或回收站中查看。" : "便签、分组和图片已同步。下次后台检查约在一分钟后。";

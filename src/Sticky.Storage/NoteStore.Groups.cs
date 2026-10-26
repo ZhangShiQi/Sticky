@@ -8,23 +8,25 @@ public sealed partial class NoteStore
     public List<NoteGroup> LoadGroups()
     {
         var path = Path.Combine(Root, "groups.json");
-        if (!File.Exists(path) && !File.Exists(path + ".bak")) return [];
+        var backups = WorkspaceFiles.BackupCandidates(Root, path);
+        if (!File.Exists(path) && !backups.Any(File.Exists)) return [];
         try { return ParseGroups(File.ReadAllBytes(path)); }
         catch (UnsupportedVersionException ex) { throw new InvalidDataException("分组数据版本过新，请升级 Sticky。", ex); }
         catch (Exception ex) when (IsDataError(ex))
         {
-            try
+            foreach (var backup in backups)
             {
-                var groups = ParseGroups(File.ReadAllBytes(path + ".bak"));
-                if (File.Exists(path)) File.Copy(path, path + $".corrupt-{DateTime.UtcNow:yyyyMMddHHmmssfff}");
-                File.Copy(path + ".bak", path, true);
-                Warnings.Add("分组已从上次备份恢复。");
-                return groups;
+                try
+                {
+                    var groups = ParseGroups(File.ReadAllBytes(backup));
+                    if (File.Exists(path)) WorkspaceFiles.PreserveCorrupt(Root, path);
+                    AtomicWrite(path, File.ReadAllBytes(backup), keepBackup: false);
+                    Warnings.Add("分组已从上次备份恢复。");
+                    return groups;
+                }
+                catch (Exception backupEx) when (IsDataError(backupEx) || backupEx is UnsupportedVersionException) { }
             }
-            catch (Exception backupEx) when (IsDataError(backupEx) || backupEx is UnsupportedVersionException)
-            {
-                throw new InvalidDataException("无法读取分组，原始文件已保留。请从备份恢复 groups.json。", ex);
-            }
+            throw new InvalidDataException("无法读取分组，原始文件已保留。请从 backups/groups.json.bak 恢复。", ex);
         }
     }
 

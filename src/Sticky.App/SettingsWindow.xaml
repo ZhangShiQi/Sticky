@@ -29,6 +29,10 @@
           <TextBlock Text="数据目录" FontWeight="SemiBold" FontSize="16" Margin="0,0,0,12" />
           <TextBox Text="{Binding DataPath, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap" Background="#EEF0E9" BorderThickness="0" Margin="0,0,0,12" AutomationProperties.Name="数据目录" />
           <Button Content="打开数据目录" Click="OpenDataFolder" HorizontalAlignment="Left" Margin="0,0,0,28" />
+          <TextBlock Text="自动备份目录" FontWeight="SemiBold" FontSize="16" Margin="0,0,0,12" />
+          <TextBox Text="{Binding BackupsPath, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap" Background="#EEF0E9" BorderThickness="0" Margin="0,0,0,12" AutomationProperties.Name="自动备份目录" />
+          <TextBlock Text="上一次成功保存的 .bak 统一保存在这里，按原目录结构分类；旧版备份会自动迁移。损坏的原文件也会保留在此目录中。" TextWrapping="Wrap" Foreground="{StaticResource Muted}" LineHeight="22" Margin="0,0,0,12" />
+          <Button Content="打开自动备份目录" Click="OpenBackupsFolder" HorizontalAlignment="Left" Margin="0,0,0,28" />
           <Separator Background="#DFE3D9" Margin="0,0,0,24" />
           <TextBlock Text="备份与迁移" FontWeight="SemiBold" FontSize="16" Margin="0,0,0,10" />
           <TextBlock Text="备份包含全部便签、分组、图片和回收站。导入同一张便签时创建副本，不覆盖现有内容。" TextWrapping="Wrap" Foreground="{StaticResource Muted}" Margin="0,0,0,18" LineHeight="22" />
@@ -37,6 +41,31 @@
             <Button Content="导入备份…" Click="ImportBackup" />
           </StackPanel>
           <TextBlock x:Name="DataStatus" TextWrapping="Wrap" Foreground="#466451" Margin="0,18,0,0" />
+        </StackPanel>
+      </ScrollViewer>
+    </TabItem>
+    <TabItem Header="编辑与排版">
+      <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Margin="0,0,6,0">
+          <TextBlock Text="编辑与排版" FontSize="26" FontWeight="SemiBold" />
+          <TextBlock Text="统一调整这台设备上的便签显示。" Foreground="{StaticResource Muted}" Margin="0,8,0,28" />
+          <TextBlock Text="默认字号" FontWeight="SemiBold" FontSize="16" Margin="0,0,0,10" />
+          <StackPanel Orientation="Horizontal" Margin="0,0,0,28">
+            <TextBox x:Name="DefaultFontSizeBox" Width="120" AutomationProperties.Name="默认字号" />
+            <TextBlock Text="10–48 逻辑像素" VerticalAlignment="Center" Foreground="{StaticResource Muted}" Margin="12,0,0,0" />
+          </StackPanel>
+          <TextBlock Text="段落间距" FontWeight="SemiBold" FontSize="16" Margin="0,0,0,10" />
+          <StackPanel Orientation="Horizontal" Margin="0,0,0,24">
+            <TextBox x:Name="ParagraphSpacingBox" Width="120" AutomationProperties.Name="段落间距" />
+            <TextBlock Text="0–32 逻辑像素" VerticalAlignment="Center" Foreground="{StaticResource Muted}" Margin="12,0,0,0" />
+          </StackPanel>
+          <TextBlock Text="段落间距是按 Enter 换段后额外增加的距离，0 表示无额外间距。行高会自然适应字体和图片。" TextWrapping="Wrap" Foreground="{StaticResource Muted}" LineHeight="22" Margin="0,0,0,18" />
+          <TextBlock Text="应用后，已打开和新建的便签立即使用同一排版，保存后重新打开也保持一致。手动设置过字号的文字保留原大小。此设置保存在本机，不随 GitHub 同步。" TextWrapping="Wrap" Foreground="{StaticResource Muted}" LineHeight="22" Margin="0,0,0,24" />
+          <StackPanel Orientation="Horizontal">
+            <Button Content="保存并应用" Click="SaveTypography" Style="{StaticResource PrimaryButton}" />
+            <Button Content="恢复默认并应用" Click="ResetTypography" />
+          </StackPanel>
+          <TextBlock x:Name="TypographyStatus" TextWrapping="Wrap" Margin="0,18,0,0" />
         </StackPanel>
       </ScrollViewer>
     </TabItem>

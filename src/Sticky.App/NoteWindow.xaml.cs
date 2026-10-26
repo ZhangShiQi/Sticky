@@ -41,7 +41,7 @@ public partial class NoteWindow : Window
         TitleBox.Text = note.Title;
         Title = note.DisplayTitle + " · Sticky";
         ApplyTheme();
-        Editor.Document = DocumentCodec.Decode(note.Blocks, workspace.Store, darkTheme: true);
+        Editor.Document = DocumentCodec.Decode(note.Blocks, workspace.Store, darkTheme: true, workspace.EditorPreferences);
         Editor.ContextMenu = BuildNoteMenu();
         AttachImageMenus();
         Width = FiniteClamp(state.Width, 280, 1200, 390);
@@ -95,7 +95,7 @@ public partial class NoteWindow : Window
         try
         {
             TitleBox.Text = _note.Title; _color = _note.Color; Title = _note.DisplayTitle + " · Sticky";
-            if (reloadBody) { Editor.Document = DocumentCodec.Decode(_note.Blocks, _workspace.Store, darkTheme: true); AttachImageMenus(); }
+            if (reloadBody) { Editor.Document = DocumentCodec.Decode(_note.Blocks, _workspace.Store, darkTheme: true, _workspace.EditorPreferences); AttachImageMenus(); }
             ApplyTheme(); _dirty = false;
             SaveStatus.Text = "已从其他设备同步"; SaveIndicator.Content = "✓"; UpdateCounters();
         }
@@ -107,6 +107,14 @@ public partial class NoteWindow : Window
         HeaderBar.Background = Brush(NotePalette.Accent(_color));
         ColorSwatch.Background = Brush(NotePalette.Background(_color));
         NoteSurface.BorderBrush = Brush(IsEditing ? NotePalette.Accent(_color) : "#555555");
+    }
+
+    public void ApplyEditorPreferences(EditorPreferences preferences)
+    {
+        var wasLoading = _loading;
+        _loading = true;
+        try { DocumentCodec.ApplyDefaults(Editor.Document, preferences); }
+        finally { _loading = wasLoading; }
     }
 
     private void StartEditing(object sender, MouseButtonEventArgs e) { if (!IsEditing) EnterEditMode(); }

@@ -20,7 +20,9 @@ public sealed partial class NoteStore
     public string Root { get; }
     public string NotesDirectory => Path.Combine(Root, "notes");
     public string AssetsDirectory => Path.Combine(Root, "assets");
+    public string BackupsDirectory => WorkspaceFiles.BackupDirectory(Root);
     public List<string> Warnings { get; } = [];
+    private readonly List<string> _migrationWarnings;
 
     public NoteStore(string root)
     {
@@ -28,6 +30,7 @@ public sealed partial class NoteStore
         Directory.CreateDirectory(NotesDirectory);
         Directory.CreateDirectory(AssetsDirectory);
         Directory.CreateDirectory(Path.Combine(Root, "device"));
+        _migrationWarnings = WorkspaceFiles.MigrateLegacyBackups(Root);
         var manifest = Path.Combine(Root, "manifest.json");
         if (!File.Exists(manifest))
             AtomicWrite(manifest, JsonSerializer.SerializeToUtf8Bytes(new Dictionary<string, object> { ["schemaVersion"] = 1, ["app"] = "Sticky" }, JsonOptions));
@@ -36,10 +39,13 @@ public sealed partial class NoteStore
     public List<Note> LoadNotes()
     {
         Warnings.Clear();
+        Warnings.AddRange(_migrationWarnings);
         var notes = new List<Note>();
         // Include backup-only notes, e.g. after an interrupted external file operation.
         var paths = Directory.EnumerateFiles(NotesDirectory, "*.json")
             .Concat(Directory.EnumerateFiles(NotesDirectory, "*.json.bak").Select(p => p[..^4]))
+            .Concat(Directory.Exists(Path.Combine(BackupsDirectory, "notes"))
+                ? Directory.EnumerateFiles(Path.Combine(BackupsDirectory, "notes"), "*.json.bak").Select(p => Path.Combine(NotesDirectory, Path.GetFileName(p)[..^4])) : [])
             .Distinct(StringComparer.OrdinalIgnoreCase);
         foreach (var path in paths)
         {
@@ -51,19 +57,21 @@ public sealed partial class NoteStore
             }
             catch (Exception ex) when (IsDataError(ex))
             {
-                try
+                var recovered = false;
+                foreach (var backup in WorkspaceFiles.BackupCandidates(Root, path))
                 {
-                    var note = ReadNote(path + ".bak", id);
-                    // Preserve the damaged source for diagnosis before restoring the backup.
-                    if (File.Exists(path)) File.Copy(path, path + $".corrupt-{DateTime.UtcNow:yyyyMMddHHmmssfff}", false);
-                    File.Copy(path + ".bak", path, true);
-                    notes.Add(note);
-                    Warnings.Add($"便签「{note.DisplayTitle}」已从上次备份恢复。");
+                    try
+                    {
+                        var note = ReadNote(backup, id);
+                        if (File.Exists(path)) WorkspaceFiles.PreserveCorrupt(Root, path);
+                        AtomicWrite(path, File.ReadAllBytes(backup), keepBackup: false);
+                        notes.Add(note);
+                        Warnings.Add($"便签「{note.DisplayTitle}」已从上次备份恢复。");
+                        recovered = true; break;
+                    }
+                    catch (Exception backupEx) when (IsDataError(backupEx) || backupEx is UnsupportedVersionException) { }
                 }
-                catch (Exception backupEx) when (IsDataError(backupEx) || backupEx is UnsupportedVersionException)
-                {
-                    Warnings.Add($"无法读取 {Path.GetFileName(path)}，原始文件已保留。原因：{ex.Message}");
-                }
+                if (!recovered) Warnings.Add($"无法读取 {Path.GetFileName(path)}，原始文件已保留。原因：{ex.Message}");
             }
         }
         return notes.OrderByDescending(n => n.ModifiedAt).ToList();
@@ -141,7 +149,7 @@ public sealed partial class NoteStore
     public DeviceState LoadDeviceState()
     {
         var path = Path.Combine(Root, "device", "windows.json");
-        foreach (var candidate in new[] { path, path + ".bak" })
+        foreach (var candidate in new[] { path }.Concat(WorkspaceFiles.BackupCandidates(Root, path)))
         {
             try
             {
@@ -163,25 +171,7 @@ public sealed partial class NoteStore
 
     private sealed class UnsupportedVersionException(string message) : Exception(message);
 
-    private static void AtomicWrite(string path, byte[] bytes, bool keepBackup = true)
-    {
-        var temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
-        try
-        {
-            using (var stream = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None, 4096, FileOptions.WriteThrough))
-            {
-                stream.Write(bytes);
-                stream.Flush(true);
-            }
-            if (File.Exists(path)) File.Replace(temporary, path, keepBackup ? path + ".bak" : null, true);
-            else
-            {
-                File.Move(temporary, path);
-                if (keepBackup) File.Copy(path, path + ".bak", true);
-            }
-        }
-        finally { if (File.Exists(temporary)) File.Delete(temporary); }
-    }
+    private void AtomicWrite(string path, byte[] bytes, bool keepBackup = true) => WorkspaceFiles.WriteAtomic(Root, path, bytes, keepBackup);
 
     [GeneratedRegex("^[a-f0-9]{64}\\.png$", RegexOptions.CultureInvariant)]
     private static partial Regex AssetName();
