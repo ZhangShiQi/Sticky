@@ -15,11 +15,19 @@ function Invoke-RestMethod {
     $global:StickyPublishTestState.Requests.Add("$Method $Uri")
     if ($Headers.Authorization -ne 'Bearer fixture-only') { throw 'Authentication header missing.' }
     if ($Uri -eq 'https://api.github.com/repos/ZhangShiQi/Sticky') { return @{ full_name = 'ZhangShiQi/Sticky' } }
-    if ($Method -eq 'GET' -and $Uri -like '*/releases/tags/*') { return $global:StickyPublishTestState.Release }
+    if ($Method -eq 'GET' -and $Uri -like '*/releases/tags/*') {
+        if ($global:StickyPublishTestState.Release -and !$global:StickyPublishTestState.Release.draft) { return $global:StickyPublishTestState.Release }
+        return $null
+    }
+    if ($Method -eq 'GET' -and $Uri -like '*/releases?per_page=*') {
+        if ($global:StickyPublishTestState.Release) { return @($global:StickyPublishTestState.Release) }
+        return @()
+    }
+    if ($Method -eq 'GET' -and $Uri -eq 'https://api.github.com/repos/ZhangShiQi/Sticky/releases/7') { return $global:StickyPublishTestState.Release }
     if ($Method -eq 'POST' -and $Uri -eq 'https://api.github.com/repos/ZhangShiQi/Sticky/releases') {
         $fields = [Text.Encoding]::UTF8.GetString($Body) | ConvertFrom-Json
         if (!$fields.draft -or $fields.tag_name -ne 'v0.2.0' -or $fields.body -ne '中文更新说明') { throw 'Incorrect draft or Unicode notes.' }
-        $global:StickyPublishTestState.Release = @{ id = 7; draft = $true; assets = @() }
+        $global:StickyPublishTestState.Release = @{ id = 7; tag_name = 'v0.2.0'; draft = $true; assets = @() }
         return $global:StickyPublishTestState.Release
     }
     if ($Method -eq 'DELETE') {

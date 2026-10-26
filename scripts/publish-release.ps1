@@ -34,7 +34,7 @@ function Invoke-ReleaseApi {
         throw 'Release request is outside the official repository.'
     }
     $parameters = @{ Uri = $Url; Method = $Method; ErrorAction = 'Stop'; MaximumRedirection = 0; Headers = @{
-        Authorization = 'Bearer ' + $Token; 'User-Agent' = 'Sticky-local-publisher'; Accept = 'application/vnd.github+json' } }
+        Authorization = 'Bearer ' + $Token; 'User-Agent' = 'Sticky-local-publisher'; Accept = 'application/vnd.github+json'; 'Cache-Control' = 'no-cache' } }
     if ($FilePath) { $parameters.InFile = $FilePath; $parameters.ContentType = 'application/octet-stream' }
     elseif ($null -ne $Body) {
         $parameters.Body = [Text.Encoding]::UTF8.GetBytes(($Body | ConvertTo-Json -Depth 8 -Compress))
@@ -56,7 +56,18 @@ function Get-ReleaseRepository([string]$Token) {
 }
 
 function Get-ReleaseState([string]$Tag, [string]$Token) {
-    return Invoke-ReleaseApi -Url "https://api.github.com/repos/ZhangShiQi/Sticky/releases/tags/$Tag" -Token $Token -AllowNotFound
+    $api = 'https://api.github.com/repos/ZhangShiQi/Sticky'
+    $published = Invoke-ReleaseApi -Url "$api/releases/tags/$Tag" -Token $Token -AllowNotFound
+    if ($published) { return $published }
+    # GitHub's by-tag endpoint may omit unpublished drafts. Writers can find them via the list API.
+    for ($page = 1; $page -le 50; $page++) {
+        $releases = @(Invoke-ReleaseApi -Url "$api/releases?per_page=100&page=$page" -Token $Token)
+        $matches = @($releases | Where-Object { $_.tag_name -eq $Tag })
+        if ($matches.Count -gt 1) { throw 'Multiple releases use this tag. Inspect drafts before retrying.' }
+        if ($matches.Count -eq 1) { return $matches[0] }
+        if ($releases.Count -lt 100) { return $null }
+    }
+    throw 'Release lookup exceeded the pagination limit.'
 }
 
 function Send-LocalRelease {
@@ -70,7 +81,7 @@ function Send-LocalRelease {
     }
     foreach ($path in @($Package, ($Package + '.sha256'))) {
         # Only replace assets belonging to this unpublished draft; retries never change a published Release.
-        $release = Get-ReleaseState -Tag $Tag -Token $Token
+        $release = Invoke-ReleaseApi -Url "$api/releases/$($release.id)" -Token $Token
         if (!$release -or !$release.draft) { throw 'The draft changed while uploading. Stop and inspect the Release before retrying.' }
         $name = [IO.Path]::GetFileName($path)
         foreach ($asset in @($release.assets | Where-Object { $_.name -eq $name })) {
@@ -81,7 +92,7 @@ function Send-LocalRelease {
         $hash = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
         if ($uploaded.digest -ne ('sha256:' + $hash)) { throw 'GitHub asset digest does not match the local file. Release remains a draft.' }
     }
-    $release = Get-ReleaseState -Tag $Tag -Token $Token
+    $release = Invoke-ReleaseApi -Url "$api/releases/$($release.id)" -Token $Token
     if (!$release -or !$release.draft) { throw 'The Release was changed by another publisher. No publish request was sent.' }
     Invoke-ReleaseApi -Method PATCH -Url "$api/releases/$($release.id)" -Token $Token -Body @{
         name = "Sticky $Version"; body = $Notes; draft = $false; prerelease = $false; make_latest = 'true' } | Out-Null
