@@ -26,6 +26,7 @@ internal static partial class Program
     private static int Main(string[] args)
     {
         if (args.Length >= 3 && args[0] == "--instance-probe") return InstanceProbe(args);
+        if (args.Length == 2 && args[0] == "--update-ui-context-probe") return UpdateUiContextProbe(args[1]);
         _root = Path.GetFullPath(args.Length > 0 ? args[0] : Path.Combine(Path.GetTempPath(), "Sticky.Tests", Guid.NewGuid().ToString("N")));
         Directory.CreateDirectory(_root);
         GitIntegrationTests.ToolBaseDirectory = args.Length > 1 ? Path.GetFullPath(args[1]) : null;
@@ -85,6 +86,7 @@ internal static partial class Program
         Run("Update archives reject traversal, personal data, duplicate paths and symlinks", UpdateArchiveValidation);
         Run("Update installation preserves portable and external data with program backups", UpdateInstallPreservesData);
         Run("Update installation rolls back all changed program components on failure", UpdateInstallRollback);
+        Run("Update installer completes under the WPF startup synchronization context", UpdateUiContext);
         Run("Update preferences persist and offline checks never block local recording", UpdatePreferencesAndOffline);
         if (GitIntegrationTests.ToolBaseDirectory is not null)
             Run("Bundled native Git and GCM run with no system Git or dotnet on PATH", () => GitTest("portable-tools", GitIntegrationTests.PortableTools));

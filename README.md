@@ -4,7 +4,7 @@
 
 ## 使用 Windows 便携版
 
-从 [GitHub Releases](https://github.com/ZhangShiQi/Sticky/releases) 获取已发布的 Windows x64 便携包，或自行打包生成 `dist/Sticky-0.2.1-win-x64-portable.zip`，完整解压后双击 `Sticky.exe`。目标电脑不需要安装 .NET SDK、.NET Runtime 或 Git。请保留随包的 `tools` 文件夹，GitHub 同步会优先使用其中的 Git 和 Git Credential Manager。源码仓库不包含发布包；从源码获取后，可按下文运行打包脚本生成。
+从 [GitHub Releases](https://github.com/ZhangShiQi/Sticky/releases) 获取已发布的 Windows x64 便携包，或自行打包生成 `dist/Sticky-0.2.2-win-x64-portable.zip`，完整解压后双击 `Sticky.exe`。目标电脑不需要安装 .NET SDK、.NET Runtime 或 Git。请保留随包的 `tools` 文件夹，GitHub 同步会优先使用其中的 Git 和 Git Credential Manager。源码仓库不包含发布包；从源码获取后，可按下文运行打包脚本生成。
 
 便携版自动将数据存到 exe 旁边的 `Data`，不依赖当前工作目录，也不读取开发预览 `.local-demo` 中的便签。发布包是空白工作空间，不包含开发机上的便签、仓库配置、Git 历史或凭据。原有便签可先导出 ZIP，再在便携版导入。
 
@@ -32,7 +32,8 @@
 
 更新仅替换 `Sticky.exe`、`tools`、`licenses`、程序 `assets`、发布清单、便携标记与使用说明，保留 `Data`、外置数据目录和开机启动项。程序目录须可写；数据目录不得与这些程序组件重叠，安装路径不支持目录链接。安装出错时尝试恢复旧程序，状态记录在数据目录 `device/update-result.json`；旧程序保存在程序目录 `.sticky-update-backup-*`，确认新版正常后可在退出 Sticky 后手动清理。突然断电、磁盘损坏或杀毒软件持续锁定文件仍可能需要从该备份手动恢复程序；不要删除自己的 `Data`。源码运行只检查版本，自动替换仅支持正式便携构建。
 
-0.1.x 没有更新客户端，需要先手动升级到 0.2.0：退出旧版，解压新包到原程序目录并保留 `Data`，之后可使用自动更新。
+0.1.x 没有更新客户端，需要先手动升级到 0.2.2 或更高版本：退出旧版，解压新包到原程序目录并保留 `Data`，之后可使用自动更新。
+0.2.0 和 0.2.1 的更新辅助进程存在启动死锁，需手动升级至 0.2.2 或更高版本一次。若更新后无法启动，请保留 `Data`，先处理卡住且命令行包含 `--apply-update` 的辅助进程，再替换程序组件；不要结束正在编辑便签的进程。0.2.2 修复了该死锁。
 
 ### 发布新版本
 

@@ -11,7 +11,8 @@ public static class UpdatePackage
     public static async Task VerifyHashAsync(string path, string expected, CancellationToken token)
     {
         using var stream = File.OpenRead(path);
-        var actual = Convert.ToHexStringLower(await SHA256.HashDataAsync(stream, token));
+        // The standalone helper calls this synchronously during WPF startup. Never resume on its dispatcher.
+        var actual = Convert.ToHexStringLower(await SHA256.HashDataAsync(stream, token).ConfigureAwait(false));
         if (!string.Equals(actual, expected, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("更新包 SHA256 校验失败，未安装。");
     }
     public static string Extract(string archive, string destination, string version)

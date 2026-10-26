@@ -1,4 +1,5 @@
 using System.IO;
+using System.Diagnostics;
 using System.IO.Compression;
 using System.Net;
 using System.Net.Http;
@@ -7,6 +8,7 @@ using System.Text;
 using System.Text.Json;
 using Sticky.App;
 using Sticky.App.Updates;
+using System.Windows.Threading;
 
 internal static partial class Program
 {
@@ -196,5 +198,39 @@ internal static partial class Program
             Check(workspace.Settings!.Title.Contains("设置"), "Update settings did not open.");
         }
         finally { workspace.PrepareExit(); }
+    }
+
+    private static int UpdateUiContextProbe(string planPath)
+    {
+        SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(Dispatcher.CurrentDispatcher));
+        var plan = JsonSerializer.Deserialize<InstallPlan>(File.ReadAllText(planPath))!;
+        UpdateInstaller.Apply(plan);
+        return 0;
+    }
+
+    private static void UpdateUiContext()
+    {
+        var plan = CreateInstallPlan("update-ui-context");
+        // Ensure hashing suspends instead of completing inline on a tiny cached fixture.
+        using (var zip = ZipFile.Open(plan.PackagePath, ZipArchiveMode.Update))
+        using (var output = zip.CreateEntry("Sticky-0.3.0-win-x64-portable/tools/context-probe.bin", CompressionLevel.NoCompression).Open())
+        {
+            var bytes = new byte[1024 * 1024]; Random.Shared.NextBytes(bytes);
+            for (var i = 0; i < 16; i++) output.Write(bytes);
+        }
+        plan = plan with { Sha256 = Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(plan.PackagePath))) };
+        var planPath = Path.Combine(Path.GetDirectoryName(plan.PackagePath)!, "context-plan.json");
+        File.WriteAllText(planPath, JsonSerializer.Serialize(plan));
+        var start = new ProcessStartInfo(Environment.ProcessPath!) { UseShellExecute = false, CreateNoWindow = true };
+        if (Path.GetFileNameWithoutExtension(start.FileName).Equals("dotnet", StringComparison.OrdinalIgnoreCase)) start.ArgumentList.Add(typeof(Program).Assembly.Location);
+        start.ArgumentList.Add("--update-ui-context-probe"); start.ArgumentList.Add(planPath);
+        using var process = Process.Start(start)!;
+        if (!process.WaitForExit(8000))
+        {
+            process.Kill(true); process.WaitForExit();
+            throw new InvalidOperationException("Update helper deadlocked while the WPF startup thread synchronously waited for package hashing.");
+        }
+        Check(process.ExitCode == 0 && File.ReadAllText(Path.Combine(plan.TargetDirectory, "Sticky.exe")) == "new executable", "UI-context installation did not complete.");
+        Check(File.ReadAllText(Path.Combine(plan.DataDirectory, "notes.json")) == "private notes", "UI-context installation changed data.");
     }
 }
