@@ -1,0 +1,50 @@
+# .NET build, publish and test output
+**/[Bb]in/
+**/[Oo]bj/
+/artifacts/
+/dist/
+**/TestResults/
+*.trx
+*.coverage
+*.coveragexml
+*.binlog
+
+# Local SDK, package caches and development workspaces
+/.tools/
+/.local-demo/
+/.test-data/
+/.codex/
+
+# Personal notes, images, sync configuration and repository caches
+**/Data/
+
+# IDE and per-user settings
+.vs/
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.rsuser
+*.pubxml.user
+
+# Logs, recovery files and temporary files
+*.log
+*.tmp
+*.temp
+*.bak
+*.corrupt-*
+*~
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Local secrets and signing material
+.env
+.env.*
+!.env.example
+*.pfx
+*.p12
+*.key
+*.pem
+secrets.json

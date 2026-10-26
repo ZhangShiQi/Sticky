@@ -1,0 +1,23 @@
+Sticky portable distribution - third-party software
+
+.NET runtime / WPF / Windows Forms 10.0.14
+https://github.com/dotnet/runtime/tree/v10.0.14
+https://github.com/dotnet/wpf
+https://github.com/dotnet/winforms
+See DOTNET-MIT.txt, DOTNET-THIRD-PARTY-NOTICES.txt and WPF-WINFORMS-LICENSE.txt.
+
+MinGit 2.56.0.windows.3 (official unmodified Windows x64 ZIP)
+https://github.com/git-for-windows/git/releases/tag/v2.56.0.windows.3
+Git source: https://github.com/git-for-windows/git/tree/v2.56.0.windows.3
+Git source archive: https://github.com/git-for-windows/git/archive/refs/tags/v2.56.0.windows.3.tar.gz
+Build and packaging scripts: https://github.com/git-for-windows/build-extra
+Component package versions: https://github.com/git-for-windows/git/releases/download/v2.56.0.windows.3/package-versions-2.56.0.3-MinGit.txt
+Additional component sources and build recipes: https://github.com/git-for-windows/MINGW-packages
+MSYS2 component sources and recipes: https://github.com/git-for-windows/MSYS2-packages
+GPL-2.0 and component notices are retained in tools/git/LICENSE.txt and
+tools/git/usr/share/licenses plus tools/git/ucrt64/share/licenses.
+
+Git Credential Manager 3.0.1 (official unmodified native Windows x64 ZIP)
+https://github.com/git-ecosystem/git-credential-manager/releases/tag/v3.0.1
+Source: https://github.com/git-ecosystem/git-credential-manager/tree/v3.0.1
+See GCM-MIT.txt and GCM-NOTICE.txt; original NOTICE also retained under tools/gcm.

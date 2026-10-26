@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <AssemblyName>Sticky</AssemblyName>
+    <RootNamespace>Sticky.App</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <Version>0.1.4</Version>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Sticky.Core\Sticky.Core.csproj" />
+    <ProjectReference Include="..\Sticky.Storage\Sticky.Storage.csproj" />
+    <ProjectReference Include="..\Sticky.Sync.Git\Sticky.Sync.Git.csproj" />
+  </ItemGroup>
+  <ItemGroup><Using Remove="System.Windows.Forms" /><Using Remove="System.Drawing" /></ItemGroup>
+  <ItemGroup Condition="'$(StickyPortable)' == 'true'"><AssemblyMetadata Include="StickyPortable" Value="true" /></ItemGroup>
+</Project>

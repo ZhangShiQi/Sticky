@@ -1,0 +1,38 @@
+<UserControl x:Class="Sticky.App.Synchronization.SyncSettingsView"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
+  <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+  <Grid Margin="0,0,5,0">
+    <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+    <StackPanel>
+      <TextBlock Text="GitHub 同步" FontSize="26" FontWeight="SemiBold" />
+      <TextBlock Text="多台电脑使用相同仓库和分支，即可同步便签。" Foreground="{StaticResource Muted}" Margin="0,8,0,22" />
+    </StackPanel>
+    <StackPanel Grid.Row="1" IsEnabled="{Binding CanConfigure}">
+      <CheckBox x:Name="EnabledBox" Content="启用 GitHub 同步" Margin="0,0,0,18" />
+      <TextBlock Text="仓库 HTTPS 地址" Margin="0,0,0,7" />
+      <TextBox x:Name="RemoteBox" AutomationProperties.Name="GitHub 仓库地址" ToolTip="例如 https://github.com/your-name/sticky-data.git" />
+      <TextBlock Text="建议先在 GitHub 创建一个专门的私有仓库。此处不填写令牌或密码。" FontSize="12" Foreground="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,7,0,16" />
+      <TextBlock Text="同步分支" Margin="0,0,0,7" />
+      <TextBox x:Name="BranchBox" AutomationProperties.Name="同步分支" />
+      <TextBlock Text="默认 sticky-data，首次同步会创建此分支。其他设备请填写完全相同的分支。" FontSize="12" Foreground="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,7,0,18" />
+    </StackPanel>
+    <Border Grid.Row="2" Background="#EEF0E9" CornerRadius="8" Padding="15" Margin="0,0,0,18">
+      <TextBlock Text="同步通过 Git 和 Git Credential Manager 完成，便携版已包含这些组件。保存配置后，点击「立即同步」完成首次登录，凭据由系统保管。&#10;&#10;便签、分组、图片和回收站会上传；窗口位置、登录凭据、设备设置不会上传。断网不影响本地编辑；冲突时保留双方版本。" TextWrapping="Wrap" Foreground="#586251" FontSize="12" LineHeight="20" />
+    </Border>
+    <ScrollViewer Grid.Row="3" VerticalScrollBarVisibility="Auto">
+      <StackPanel>
+        <TextBlock Text="{Binding Status}" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,8" TextWrapping="Wrap" />
+        <TextBlock Text="{Binding Details}" Foreground="{StaticResource Muted}" TextWrapping="Wrap" FontSize="12" />
+        <TextBlock x:Name="FormError" Foreground="#B23E46" TextWrapping="Wrap" Margin="0,10,0,0" />
+      </StackPanel>
+    </ScrollViewer>
+    <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,18,0,0">
+      <Button Content="保存配置" Click="SaveConfig" IsEnabled="{Binding CanConfigure}" />
+      <Button Content="立即同步" Click="SyncNow" Style="{StaticResource PrimaryButton}" IsEnabled="{Binding CanConfigure}" />
+      <Button Content="取消同步" Click="CancelSync" IsEnabled="{Binding IsBusy}" Margin="0" />
+    </StackPanel>
+  </Grid>
+  </ScrollViewer>
+</UserControl>
