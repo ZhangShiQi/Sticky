@@ -116,8 +116,11 @@ public static class UpdateInstaller
     }
     private static void Move(string source, string destination)
     {
-        if (Directory.Exists(source)) Directory.Move(source, destination);
-        else File.Move(source, destination);
+        Sticky.UpdateEngine.DurableFiles.RetryIO(() =>
+        {
+            if (Directory.Exists(source)) Directory.Move(source, destination);
+            else File.Move(source, destination);
+        });
     }
     private static void Restart(InstallPlan plan)
     {

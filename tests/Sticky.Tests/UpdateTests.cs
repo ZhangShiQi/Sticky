@@ -287,6 +287,25 @@ internal static partial class Program
             UpdateInstaller.Apply(plan);
             Check(File.ReadAllText(Path.Combine(plan.TargetDirectory, "Sticky.exe")) == "new executable", "Could not retry after file unlock.");
         }
+        foreach (var lockStagedFile in new[] { false, true })
+        {
+            var plan = CreateInstallPlan("update-transient-lock-" + lockStagedFile);
+            FileStream? locked = null;
+            Task? unlock = null;
+            try
+            {
+                UpdateInstaller.Apply(plan, entry =>
+                {
+                    if (entry != "Sticky.exe") return;
+                    var folder = lockStagedFile ? Directory.EnumerateDirectories(plan.TargetDirectory, ".sticky-update-stage-*").Single() : plan.TargetDirectory;
+                    locked = new FileStream(Path.Combine(folder, "Sticky.exe"), FileMode.Open, FileAccess.Read, FileShare.Read);
+                    unlock = Task.Run(async () => { await Task.Delay(250); locked.Dispose(); });
+                });
+                Check(File.ReadAllText(Path.Combine(plan.TargetDirectory, "Sticky.exe")) == "new executable", "A temporary file lock prevented installation.");
+                Check(File.ReadAllText(Path.Combine(plan.DataDirectory, "notes.json")) == "private notes", "Transient lock retry changed note bytes.");
+            }
+            finally { unlock?.GetAwaiter().GetResult(); locked?.Dispose(); }
+        }
     }
 
     private static void UpdateRejectedPackagesPreserveInstallation()
