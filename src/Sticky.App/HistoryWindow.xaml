@@ -1,0 +1,82 @@
+<Window x:Class="Sticky.App.HistoryWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="clr-namespace:Sticky.App.Controls"
+        Title="Sticky · 时间轴与重放" Width="1280" Height="900" MinWidth="1000" MinHeight="720" WindowStartupLocation="CenterScreen">
+  <Grid Margin="22">
+    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+    <Grid Margin="0,0,0,18">
+      <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+      <StackPanel><TextBlock Text="时间轴" FontSize="26" FontWeight="SemiBold"/><TextBlock Text="看全局，也看每张便签的演变。" Foreground="{StaticResource Muted}" Margin="0,5,0,0"/></StackPanel>
+      <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center"><Button Content="刷新记录" Click="RefreshClicked"/><Button Content="导出历史…" Click="ExportHistory" Margin="0"/></StackPanel>
+    </Grid>
+    <Grid Grid.Row="1">
+      <Grid.ColumnDefinitions><ColumnDefinition Width="225"/><ColumnDefinition Width="16"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+      <Border Background="#EEF1E9" CornerRadius="10" Padding="12">
+        <DockPanel>
+          <StackPanel DockPanel.Dock="Top">
+            <TextBlock Text="便签" FontSize="17" FontWeight="SemiBold" Margin="4,2,0,8"/>
+            <TextBlock x:Name="SelectionCount" Foreground="{StaticResource Muted}" Margin="4,0,0,10"/>
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,12"><Button Content="全选" Click="SelectAll" Padding="10,5"/><Button Content="清空选择" Click="ClearSelection" Padding="10,5" Margin="0"/></StackPanel>
+          </StackPanel>
+          <TextBlock DockPanel.Dock="Bottom" Text="勾选便签展开轨道。&#10;主时间线始终显示全部变化。" Foreground="{StaticResource Muted}" FontSize="11" Margin="4,12,0,2" TextWrapping="Wrap"/>
+          <ListBox x:Name="NoteList" Background="Transparent" BorderThickness="0" HorizontalContentAlignment="Stretch" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                   VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling" AutomationProperties.Name="时间轴便签多选列表">
+            <ListBox.ItemContainerStyle><Style TargetType="ListBoxItem"><Setter Property="Padding" Value="0"/><Setter Property="Margin" Value="0,0,0,6"/><Setter Property="Focusable" Value="False"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ListBoxItem"><ContentPresenter/></ControlTemplate></Setter.Value></Setter></Style></ListBox.ItemContainerStyle>
+            <ListBox.ItemTemplate><DataTemplate>
+              <Border x:Name="NoteChoice" Background="#F8F9F5" BorderBrush="#DCE2D8" BorderThickness="1" CornerRadius="7">
+                <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}" Padding="10,12" VerticalContentAlignment="Center" HorizontalContentAlignment="Stretch" AutomationProperties.Name="{Binding Title}">
+                  <StackPanel Margin="5,0,0,0"><DockPanel><Border Background="{Binding Accent}" Width="10" Height="10" CornerRadius="2" Margin="0,0,7,0"/><TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis" MaxWidth="140" ToolTip="{Binding Title}" FontWeight="SemiBold"/></DockPanel><TextBlock Text="{Binding Description}" Foreground="{StaticResource Muted}" FontSize="11" Margin="0,5,0,0" TextWrapping="Wrap"/></StackPanel>
+                </CheckBox>
+              </Border>
+              <DataTemplate.Triggers><DataTrigger Binding="{Binding IsSelected}" Value="True"><Setter TargetName="NoteChoice" Property="Background" Value="#E2EBDC"/><Setter TargetName="NoteChoice" Property="BorderBrush" Value="#A4B79A"/></DataTrigger></DataTemplate.Triggers>
+            </DataTemplate></ListBox.ItemTemplate>
+          </ListBox>
+        </DockPanel>
+      </Border>
+      <Grid Grid.Column="2">
+        <Grid.RowDefinitions><RowDefinition Height="3*" MinHeight="180"/><RowDefinition Height="8"/><RowDefinition Height="2*" MinHeight="220"/></Grid.RowDefinitions>
+        <Border Background="#F2F4EE" BorderBrush="#E0E5DB" BorderThickness="1" CornerRadius="10" Padding="12">
+          <DockPanel>
+            <Grid DockPanel.Dock="Top" Margin="2,0,2,10"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBlock Text="工作空间与便签" FontWeight="SemiBold"/><TextBlock x:Name="EventCount" Grid.Column="1" Foreground="{StaticResource Muted}" FontSize="11" VerticalAlignment="Center"/></Grid>
+            <controls:HistoryTimelineView x:Name="TimelineView" AutomationProperties.Name="工作空间和所选便签的统一时间轴"/>
+          </DockPanel>
+        </Border>
+        <GridSplitter Grid.Row="1" Height="6" HorizontalAlignment="Stretch" VerticalAlignment="Center" Background="Transparent" ResizeDirection="Rows" ResizeBehavior="PreviousAndNext" ToolTip="拖动调整时间轴与内容预览的高度"/>
+        <DockPanel Grid.Row="2">
+        <Grid DockPanel.Dock="Top" Margin="0,6,0,10"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBlock Text="共同时间点" Foreground="{StaticResource Muted}"/><TextBlock x:Name="CurrentTime" Grid.Column="1" FontWeight="SemiBold"/></Grid>
+        <TabControl x:Name="PreviewTabs">
+          <TabItem Header="此时的便签">
+            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="0,12,0,0">
+              <DockPanel><TextBlock x:Name="PreviewEmpty" DockPanel.Dock="Top" Text="从左侧选择便签，即可展开轨道并查看它们在此时的内容。" Foreground="{StaticResource Muted}" Margin="12,22" TextWrapping="Wrap"/><WrapPanel x:Name="SnapshotPanel" SizeChanged="SnapshotSizeChanged"/></DockPanel>
+            </ScrollViewer>
+          </TabItem>
+          <TabItem Header="变化与恢复">
+            <Grid Margin="0,10,0,0"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+              <Grid Margin="0,0,0,10"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <StackPanel Margin="0,0,10,0"><TextBlock x:Name="DetailHeading" FontWeight="SemiBold" FontSize="15" TextTrimming="CharacterEllipsis"/><TextBlock x:Name="DetailTime" Foreground="{StaticResource Muted}" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap"/></StackPanel>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top"><Button x:Name="RestoreCopyButton" Content="恢复为新便签" Click="RestoreCopy" IsEnabled="False" Padding="10,7"/><Button x:Name="RestoreCurrentButton" Content="恢复到当前…" Click="RestoreCurrent" IsEnabled="False" Padding="10,7" Margin="0"/></StackPanel>
+              </Grid>
+              <TabControl Grid.Row="1"><TabItem Header="内容对比"><Grid Margin="0,8,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="10"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                <DockPanel><TextBlock Text="修改前" DockPanel.Dock="Top" Foreground="{StaticResource Muted}" Margin="0,0,0,6"/><RichTextBox x:Name="BeforePreview" IsReadOnly="True" IsDocumentEnabled="False" AllowDrop="False" VerticalScrollBarVisibility="Auto" Background="#333333" Foreground="#EEEEEE" BorderThickness="0" Padding="10" AutomationProperties.Name="历史修改前内容"/></DockPanel>
+                <DockPanel Grid.Column="2"><TextBlock Text="该版本" DockPanel.Dock="Top" Foreground="{StaticResource Muted}" Margin="0,0,0,6"/><RichTextBox x:Name="AfterPreview" IsReadOnly="True" IsDocumentEnabled="False" AllowDrop="False" VerticalScrollBarVisibility="Auto" Background="#333333" Foreground="#EEEEEE" BorderThickness="0" Padding="10" AutomationProperties.Name="历史版本内容"/></DockPanel>
+              </Grid></TabItem><TabItem Header="变更详情"><TextBox x:Name="ChangesText" IsReadOnly="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" Background="#F3F4EF" BorderThickness="0" Padding="12"/></TabItem></TabControl>
+            </Grid>
+          </TabItem>
+        </TabControl>
+        </DockPanel>
+      </Grid>
+    </Grid>
+    <StackPanel Grid.Row="2" Margin="0,16,0,0">
+      <Slider x:Name="ProgressSlider" Minimum="0" Maximum="0" TickFrequency="1" IsSnapToTickEnabled="True" ValueChanged="ProgressChanged" AutomationProperties.Name="历史播放进度"/>
+      <Grid Margin="0,10,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+        <StackPanel Orientation="Horizontal"><Button x:Name="PlayButton" Content="▶ 播放所选" Click="TogglePlayback" Style="{StaticResource PrimaryButton}" MinWidth="116"/><Button Content="上一步" Click="Previous"/><Button Content="下一步" Click="Next"/>
+          <ComboBox x:Name="SpeedBox" Width="76" Margin="8,0,14,0" SelectedIndex="1" SelectionChanged="SpeedChanged" AutomationProperties.Name="播放速度"><ComboBoxItem Content="0.5×" Tag="0.5"/><ComboBoxItem Content="1×" Tag="1"/><ComboBoxItem Content="2×" Tag="2"/><ComboBoxItem Content="4×" Tag="4"/><ComboBoxItem Content="8×" Tag="8"/></ComboBox>
+          <CheckBox x:Name="SkipIdle" Content="跳过空闲" IsChecked="True" VerticalAlignment="Center" Checked="SpeedChanged" Unchecked="SpeedChanged"/>
+        </StackPanel>
+        <TextBlock x:Name="PlaybackStatus" Grid.Column="1" Foreground="{StaticResource Muted}" HorizontalAlignment="Right" VerticalAlignment="Center" FontSize="12" TextWrapping="Wrap" Margin="12,0,0,0"/>
+      </Grid>
+      <TextBlock x:Name="StatusText" Foreground="{StaticResource Muted}" TextWrapping="Wrap" FontSize="11" Margin="0,10,0,0"/>
+    </StackPanel>
+  </Grid>
+</Window>

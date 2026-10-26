@@ -22,14 +22,16 @@ public sealed partial class NoteStore
     public string AssetsDirectory => Path.Combine(Root, "assets");
     public string BackupsDirectory => WorkspaceFiles.BackupDirectory(Root);
     public List<string> Warnings { get; } = [];
+    public HistoryStore History { get; }
     private readonly List<string> _migrationWarnings;
 
-    public NoteStore(string root)
+    public NoteStore(string root, HistoryOptions? historyOptions = null)
     {
         Root = Path.GetFullPath(root);
         Directory.CreateDirectory(NotesDirectory);
         Directory.CreateDirectory(AssetsDirectory);
         Directory.CreateDirectory(Path.Combine(Root, "device"));
+        History = new HistoryStore(Root, historyOptions);
         _migrationWarnings = WorkspaceFiles.MigrateLegacyBackups(Root);
         var manifest = Path.Combine(Root, "manifest.json");
         if (!File.Exists(manifest))
@@ -98,7 +100,7 @@ public sealed partial class NoteStore
         Validate(note);
         var bytes = JsonSerializer.SerializeToUtf8Bytes(note, JsonOptions);
         if (bytes.Length > 20 * 1024 * 1024) throw new InvalidDataException("便签正文超过 20 MB，请拆分为多张便签。");
-        AtomicWrite(Path.Combine(NotesDirectory, note.Id + ".json"), bytes);
+        History.WriteDocument("notes/" + note.Id + ".json", bytes, () => AtomicWrite(Path.Combine(NotesDirectory, note.Id + ".json"), bytes));
     }
 
     private static void Validate(Note note)
@@ -164,12 +166,22 @@ public sealed partial class NoteStore
         return new DeviceState();
     }
 
-    public void SaveDeviceState(DeviceState state) => AtomicWrite(
-        Path.Combine(Root, "device", "windows.json"), JsonSerializer.SerializeToUtf8Bytes(state, JsonOptions));
+    public void SaveDeviceState(DeviceState state)
+    {
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(state, JsonOptions);
+        History.WriteDocument("device/windows.json", bytes, () => AtomicWrite(Path.Combine(Root, "device", "windows.json"), bytes));
+    }
+
+    internal void RollbackImportedNote(Guid id)
+    {
+        var path = Path.Combine(NotesDirectory, id + ".json");
+        History.WriteDocument("notes/" + id + ".json", null, () => { if (File.Exists(path)) File.Delete(path); });
+        foreach (var backup in WorkspaceFiles.BackupCandidates(Root, path)) if (File.Exists(backup)) File.Delete(backup);
+    }
 
     private static bool IsDataError(Exception ex) => ex is IOException or InvalidDataException or UnauthorizedAccessException or JsonException or NotSupportedException;
 
-    private sealed class UnsupportedVersionException(string message) : Exception(message);
+    internal sealed class UnsupportedVersionException(string message) : Exception(message);
 
     private void AtomicWrite(string path, byte[] bytes, bool keepBackup = true) => WorkspaceFiles.WriteAtomic(Root, path, bytes, keepBackup);
 

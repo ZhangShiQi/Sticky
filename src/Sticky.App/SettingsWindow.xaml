@@ -36,7 +36,7 @@
           <Button Content="打开自动备份目录" Click="OpenBackupsFolder" HorizontalAlignment="Left" Margin="0,0,0,28" />
           <Separator Background="#DFE3D9" Margin="0,0,0,24" />
           <TextBlock Text="备份与迁移" FontWeight="SemiBold" FontSize="16" Margin="0,0,0,10" />
-          <TextBlock Text="备份包含全部便签、分组、图片和回收站。导入同一张便签时创建副本，不覆盖现有内容。" TextWrapping="Wrap" Foreground="{StaticResource Muted}" Margin="0,0,0,18" LineHeight="22" />
+          <TextBlock Text="普通备份包含便签、分组、图片和回收站；导入会创建副本，不覆盖现有内容。时间轴请使用「历史与重放」中的完整历史备份。" TextWrapping="Wrap" Foreground="{StaticResource Muted}" Margin="0,0,0,18" LineHeight="22" />
           <StackPanel Orientation="Horizontal">
             <Button Content="导出备份…" Click="ExportBackup" Style="{StaticResource PrimaryButton}" />
             <Button Content="导入备份…" Click="ImportBackup" />
@@ -125,6 +125,19 @@
           <TextBlock Text="更新仅替换程序组件，保留 Data、外置数据目录和开机启动项。安装失败会尝试恢复旧程序，旧文件备份保留在程序目录。自动安装需要 Windows x64 便携版及可写的程序目录。" TextWrapping="Wrap" Foreground="{StaticResource Muted}" LineHeight="23" Margin="0,20,0,0" />
         </StackPanel>
       </ScrollViewer>
+    </TabItem>
+    <TabItem Header="历史与重放">
+      <StackPanel>
+        <TextBlock Text="历史与重放" FontSize="26" FontWeight="SemiBold"/>
+        <TextBlock Text="每次变化都留在本机，离线也能回看。" Foreground="{StaticResource Muted}" Margin="0,8,0,26"/>
+        <TextBlock Text="时间轴展示便签内容、标题、颜色、分组和删除恢复。连续输入合并为一次修改，窗口位置、大小、置顶及打开关闭仅保留为内部状态。历史目前全部保留，不自动清理。" TextWrapping="Wrap" LineHeight="23" Margin="0,0,0,18"/>
+        <TextBlock Text="在左侧列表多选便签，顶部统一显示时间刻度。工作空间以「操作图标 + 下方便签标题」逐项展示，便签轨道复用同一套图标；悬停查看完整操作说明，点击节点、拖动进度或播放，可同时回看所选便签的内容。播放不会修改当前数据或触发同步；恢复为副本或恢复到当前便签均追加新记录。" TextWrapping="Wrap" Foreground="{StaticResource Muted}" LineHeight="23" Margin="0,0,0,20"/>
+        <Button Content="打开时间轴与重放" Click="OpenTimeline" Style="{StaticResource PrimaryButton}" HorizontalAlignment="Left" Margin="0,0,0,24"/>
+        <TextBox Text="{Binding HistoryPath, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap" Background="#EEF0E9" BorderThickness="0" Margin="0,0,0,12"/>
+        <Button Content="打开本地历史目录" Click="OpenHistoryFolder" HorizontalAlignment="Left" Margin="0,0,0,22"/>
+        <TextBlock Text="GitHub 只同步便签当前状态，本地时间轴不会上传。从其他设备收到的变化会标记为「同步传入」。图片由历史和当前内容共享，请勿手动删除 assets 中仍被历史引用的图片。" TextWrapping="Wrap" Foreground="{StaticResource Muted}" LineHeight="23" Margin="0,0,0,18"/>
+        <TextBlock Text="在时间轴中点击「导出历史」可保存便签与完整历史备份。恢复到新工作空间时，退出 Sticky，将备份完整解压到空的 Data 目录。普通便签导入不会替换当前时间轴。" TextWrapping="Wrap" Foreground="{StaticResource Muted}" LineHeight="23"/>
+      </StackPanel>
     </TabItem>
   </TabControl>
 </Window>

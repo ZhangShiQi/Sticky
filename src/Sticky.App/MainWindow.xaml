@@ -35,6 +35,7 @@
             </DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
             <Button x:Name="UngroupedButton" Content="未分组" Click="ShowUngrouped" Style="{StaticResource NavigationButton}" Background="{Binding UngroupedBackground}" />
             <Button x:Name="TrashButton" Content="↺   回收站" Click="ShowTrash" Style="{StaticResource NavigationButton}" Background="{Binding TrashBackground}" />
+            <Button x:Name="HistoryButton" Content="◷   时间轴" Click="OpenHistory" Style="{StaticResource NavigationButton}" />
           </StackPanel>
         </ScrollViewer>
         <Grid Grid.Row="3" Margin="0,16,0,12">
@@ -79,7 +80,7 @@
                 <StackPanel Grid.Row="3" Orientation="Horizontal">
                   <Button Content="{Binding Action}" Click="OpenCard" Padding="10,6" Background="#70FFFFFF" FontSize="12" />
                   <Button Content="{Binding GroupName}" Click="MoveCard" Padding="8,6" Background="Transparent" FontSize="12" Foreground="#6B6D65" MaxWidth="85" ToolTip="移动到分组" Visibility="{Binding CanDelete, Converter={StaticResource BoolVisibility}}" />
-                  <Button Content="···" Click="CardMenu" Padding="8,6" Background="Transparent" FontSize="12" ToolTip="更多操作" Visibility="{Binding CanDelete, Converter={StaticResource BoolVisibility}}" />
+                  <Button Content="···" Click="CardMenu" Padding="8,6" Background="Transparent" FontSize="12" ToolTip="更多操作" />
                 </StackPanel>
               </Grid>
             </Border>

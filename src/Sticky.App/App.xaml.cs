@@ -126,6 +126,7 @@ public partial class App : Application
         void Add(string label, Action action) => menu.Items.Add(label, null, (_, _) => Dispatcher.BeginInvoke(action));
         Add("便签管理", workspace.ShowManager);
         Add("搜索便签", workspace.ShowSearch);
+        Add("时间轴与重放", () => workspace.ShowHistory());
         Add("新建便签", () => workspace.CreateNote());
         Add("设置…", workspace.ShowSettings);
         menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());

@@ -31,6 +31,7 @@ internal static partial class Program
         if (args.Length > 2 && args[0] == "--health-probe") return HealthProbe(args);
         if (args.Length == 3 && args[0] == "--portable-update-smoke") return PortableUpdateSmoke(args[1], args[2]);
         if (args.Length >= 2 && args[0] == "--legacy-probe") return LegacyProbe(args[1]);
+        if (args.Length == 4 && args[0] == "--history-transaction-probe") return HistoryTransactionProbe(args);
         _root = Path.GetFullPath(args.Length > 0 ? args[0] : Path.Combine(Path.GetTempPath(), "Sticky.Tests", Guid.NewGuid().ToString("N")));
         Directory.CreateDirectory(_root);
         GitIntegrationTests.ToolBaseDirectory = args.Length > 1 ? Path.GetFullPath(args[1]) : null;
@@ -104,6 +105,16 @@ internal static partial class Program
         Run("Launcher protects first startup and can bridge back to a verified legacy backup", LauncherBootstrapAndLegacyBridge);
         Run("Launcher late startup failure rolls back program without overwriting new edits", LauncherLateFailurePreservesNewEdits);
         Run("Launcher rejects incompatible schema, protocol, bad components and unreadable snapshots", LauncherInvalidCandidates);
+        Run("History records lifecycle, groups, layout, rich text and immutable image references", HistoryRoundTrip);
+        Run("History batches input sessions and distinguishes local and synced changes", HistoryBatchingAndSources);
+        Run("History captures existing notes and rebuilds corrupt checkpoints", HistoryBaselineAndCheckpoints);
+        Run("History failures preserve live notes and recover written events exactly once", HistoryWriteFailures);
+        Run("History recovers forced termination before state, after state and after event publication", HistoryForcedTermination);
+        Run("History UI replay is read-only and restores copies or versions as new events", HistoryRestoreAndReplayUi);
+        Run("History user timeline hides layout and batches interleaved note edits", HistoryUserPresentation);
+        Run("History unified timeline supports native multiselection and selected read-only playback", HistoryMultiSelectionUi);
+        Run("History archives preserve timelines and reconcile external changes without overwriting data", HistoryBackupAndExternalChanges);
+        Run("History captures incoming sync locally and rejects incomplete restore before changing data", HistorySyncAndInvalidRestore);
         if (GitIntegrationTests.ToolBaseDirectory is not null)
             Run("Bundled native Git and GCM run with no system Git or dotnet on PATH", () => GitTest("portable-tools", GitIntegrationTests.PortableTools));
         Console.WriteLine($"\n{_passed} passed; {_failed} failed. Artifacts: {_root}");

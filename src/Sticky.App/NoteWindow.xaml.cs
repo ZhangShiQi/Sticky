@@ -30,6 +30,8 @@ public partial class NoteWindow : Window
     private bool _menuOpen;
     private bool _pointerOver;
     private bool _dragging;
+    private bool _nativeMoving;
+    private string _historyBatch = Guid.NewGuid().ToString("N");
     private bool _showHeaderOnHover;
     private static readonly DependencyPropertyKey IsHeaderExpandedPropertyKey = DependencyProperty.RegisterReadOnly(nameof(IsHeaderExpanded), typeof(bool), typeof(NoteWindow), new PropertyMetadata(false));
     public static readonly DependencyProperty IsHeaderExpandedProperty = IsHeaderExpandedPropertyKey.DependencyProperty;
@@ -63,6 +65,7 @@ public partial class NoteWindow : Window
             _pointerOver = IsMouseOver;
             UpdateHeaderState();
         };
+        SourceInitialized += (_, _) => System.Windows.Interop.HwndSource.FromHwnd(new System.Windows.Interop.WindowInteropHelper(this).Handle)?.AddHook(TrackNativeMove);
         Topmost = state.Topmost;
         _saveTimer.Tick += (_, _) => { _saveTimer.Stop(); SaveNow(false); };
         _layoutTimer.Tick += (_, _) => { _layoutTimer.Stop(); CaptureWindowState(); _workspace.SaveDevice(); };
@@ -87,6 +90,7 @@ public partial class NoteWindow : Window
 
     public void EnterEditMode()
     {
+        if (!IsEditing) _historyBatch = Guid.NewGuid().ToString("N");
         SetValue(IsEditingProperty, true);
         Editor.IsReadOnly = false;
         Editor.VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
@@ -106,7 +110,7 @@ public partial class NoteWindow : Window
         UpdateHeaderState();
     }
 
-    public void ReloadAfterSync(bool reloadBody)
+    public void ReloadAfterSync(bool reloadBody, string status = "已从其他设备同步")
     {
         _loading = true;
         try
@@ -114,7 +118,7 @@ public partial class NoteWindow : Window
             TitleBox.Text = _note.Title; _color = _note.Color; Title = _note.DisplayTitle + " · Sticky";
             if (reloadBody) { Editor.Document = DocumentCodec.Decode(_note.Blocks, _workspace.Store, darkTheme: true, _workspace.EditorPreferences); AttachImageMenus(); }
             ApplyTheme(); _dirty = false;
-            SaveStatus.Text = "已从其他设备同步"; SaveIndicator.Content = "✓"; UpdateCounters();
+            SaveStatus.Text = status; SaveIndicator.Content = "✓"; UpdateCounters();
         }
         finally { _loading = false; }
     }
@@ -162,7 +166,7 @@ public partial class NoteWindow : Window
         {
             _dragging = true; UpdateHeaderState();
             try { DragMove(); e.Handled = true; }
-            finally { _dragging = false; _pointerOver = IsMouseOver; UpdateHeaderState(); }
+            finally { _dragging = false; _pointerOver = IsMouseOver; UpdateHeaderState(); _layoutTimer.Stop(); CaptureWindowState(); _workspace.SaveDevice(); }
         }
     }
     private void EditorSelectionChanged(object sender, RoutedEventArgs e) { if (!_loading) UpdateFormatButtons(); }
@@ -215,7 +219,7 @@ public partial class NoteWindow : Window
             _note.Title = TitleBox.Text;
             _note.Color = _color;
             _note.ModifiedAt = DateTimeOffset.UtcNow;
-            _workspace.Store.Save(_note);
+            using (var history = _workspace.Store.History.WithContext("local", _historyBatch)) _workspace.Store.Save(_note);
             _dirty = false;
             SaveStatus.Text = "已保存 · " + DateTime.Now.ToString("HH:mm:ss");
             SaveStatus.Foreground = Brush("#526B4C");
@@ -264,9 +268,19 @@ public partial class NoteWindow : Window
 
     private void LayoutChanged(object? sender, EventArgs e)
     {
-        if (_loading || _workspace.IsExiting) return;
+        if (_loading || _workspace.IsExiting || _dragging || _nativeMoving) return;
         _layoutTimer.Stop();
         _layoutTimer.Start();
+    }
+    private nint TrackNativeMove(nint hwnd, int message, nint wParam, nint lParam, ref bool handled)
+    {
+        if (message == 0x0231) { _nativeMoving = true; _layoutTimer.Stop(); }
+        else if (message == 0x0232)
+        {
+            _nativeMoving = false;
+            if (!_loading && !_workspace.IsExiting) { CaptureWindowState(); _workspace.SaveDevice(); }
+        }
+        return 0;
     }
 
     private void OpenMenu(object sender, RoutedEventArgs e)
@@ -342,6 +356,7 @@ public partial class NoteWindow : Window
             menu.Items.Add(new Separator());
             Add("便签管理", _workspace.ShowManager);
             Add("搜索便签    Ctrl+F", _workspace.ShowSearch);
+            Add("历史版本与重放…", () => _workspace.ShowHistory(_note.Id));
             Add("设置…", _workspace.ShowSettings);
             Add("立即保存    Ctrl+S", () => SaveNow());
             Add("移入回收站", () => _workspace.Delete(_note));

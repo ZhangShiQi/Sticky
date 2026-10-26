@@ -31,6 +31,7 @@ public partial class MainWindow : Window
     private void ShowUngrouped(object sender, RoutedEventArgs e) => _viewModel.SelectGroup(null, ungroupedOnly: true);
     private void ShowTrash(object sender, RoutedEventArgs e) => _viewModel.ShowDeleted = true;
     private void OpenSettings(object sender, RoutedEventArgs e) => _workspace.ShowSettings();
+    private void OpenHistory(object sender, RoutedEventArgs e) => _workspace.ShowHistory();
     private void SidebarSearchKeyDown(object sender, KeyEventArgs e)
     {
         if (e.Key != Key.Enter) return;
@@ -70,9 +71,16 @@ public partial class MainWindow : Window
     {
         if (sender is not Button { DataContext: NoteCard card } button) return;
         var menu = new ContextMenu { PlacementTarget = button };
-        var delete = new MenuItem { Header = "移入回收站" };
-        delete.Click += (_, _) => _workspace.Delete(card.Note);
-        menu.Items.Add(delete); menu.IsOpen = true;
+        var history = new MenuItem { Header = "历史版本与重放…" };
+        history.Click += (_, _) => _workspace.ShowHistory(card.Note.Id);
+        menu.Items.Add(history);
+        if (card.Note.DeletedAt is null)
+        {
+            var delete = new MenuItem { Header = "移入回收站" };
+            delete.Click += (_, _) => _workspace.Delete(card.Note);
+            menu.Items.Add(delete);
+        }
+        menu.IsOpen = true;
     }
     private void OpenCard(object sender, RoutedEventArgs e)
     {

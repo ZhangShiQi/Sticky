@@ -22,6 +22,7 @@ public sealed class StickyWorkspace
     public bool StartupPending { get; set; }
     public MainWindow? Manager { get; set; }
     public SearchWindow? Search { get; private set; }
+    public HistoryWindow? History { get; private set; }
     public SyncCoordinator Sync { get; }
     public SettingsWindow? Settings { get; private set; }
     public StartupRegistration Startup { get; }
@@ -35,11 +36,14 @@ public sealed class StickyWorkspace
         Notes = Store.LoadNotes();
         Groups = Store.LoadGroups();
         // Recover names for externally copied notes without dropping their membership.
+        var recoveredGroups = false;
         foreach (var id in Notes.Where(n => n.GroupId.HasValue).Select(n => n.GroupId!.Value).Distinct())
-            if (!Groups.Any(g => g.Id == id)) Groups.Add(new NoteGroup { Id = id, Name = "恢复的分组 " + id.ToString("N")[..8] });
-        if (Groups.Count > 0) Store.SaveGroups(Groups);
+            if (!Groups.Any(g => g.Id == id)) { Groups.Add(new NoteGroup { Id = id, Name = "恢复的分组 " + id.ToString("N")[..8] }); recoveredGroups = true; }
+        if (recoveredGroups) Store.SaveGroups(Groups);
         Device = Store.LoadDeviceState();
         EditorPreferences = Store.LoadEditorPreferences();
+        try { Store.History.Reconcile(); }
+        catch (Exception ex) { Store.Warnings.Add("历史暂不可读取，现有便签已保留：" + ex.Message); }
         Sync = new SyncCoordinator(this);
         Updates = new UpdateCoordinator(this);
     }
@@ -138,6 +142,7 @@ public sealed class StickyWorkspace
         foreach (var window in Windows.Values.ToArray()) window.Close();
         Search?.Close();
         Settings?.Close();
+        History?.Close();
         Manager?.Close();
         return true;
     }
@@ -169,6 +174,64 @@ public sealed class StickyWorkspace
     }
 
     public void ShowSearch() => ShowSearch(null);
+
+    public void ShowHistory(Guid? noteId = null)
+    {
+        if (!SaveAllNotes()) return;
+        try
+        {
+            Store.History.Flush();
+            if (History is null)
+            {
+                History = new HistoryWindow(this);
+                History.Closed += (_, _) => History = null;
+            }
+            History.SelectNote(noteId);
+            if (History.WindowState == System.Windows.WindowState.Minimized) History.WindowState = System.Windows.WindowState.Normal;
+            History.Show(); History.Activate();
+        }
+        catch (Exception ex) { ShowError("无法读取本地历史，当前便签未被修改", ex); }
+    }
+
+    public Note RestoreHistoryNote(Note snapshot, IReadOnlyList<NoteGroup> historicalGroups, long sequence, bool asCopy)
+    {
+        if (!SaveAllNotes()) throw new System.IO.IOException("请先保存当前编辑内容，再恢复历史。");
+        var existing = Notes.FirstOrDefault(n => n.Id == snapshot.Id);
+        if (!asCopy && existing is null) throw new System.IO.IOException("当前便签已不存在，请恢复为新便签。");
+        using var context = Store.History.WithContext("restore", Guid.NewGuid().ToString("N"), $"从时间轴 #{sequence} 恢复" + (asCopy ? "为新便签" : "到当前便签"));
+        var next = SyncJson.Read<Note>(SyncJson.Bytes(snapshot));
+        var now = DateTimeOffset.UtcNow;
+        next.Id = asCopy ? Guid.NewGuid() : existing!.Id;
+        next.CreatedAt = asCopy ? now : existing!.CreatedAt;
+        next.ModifiedAt = now; next.DeletedAt = null;
+        if (asCopy) { next.Title = snapshot.DisplayTitle[..Math.Min(snapshot.DisplayTitle.Length, 480)] + "（历史副本）"; next.ConflictOf = null; }
+        foreach (var image in HistoryImages(next.Blocks).Distinct())
+        {
+            var path = Store.GetAssetPath(image);
+            if (!System.IO.File.Exists(path) || Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(System.IO.File.ReadAllBytes(path))) + ".png" != image)
+                throw new System.IO.IOException("历史图片缺失或校验失败，未恢复便签：" + image);
+        }
+        if (next.GroupId is { } groupId && !Groups.Any(g => g.Id == groupId))
+        {
+            var oldName = historicalGroups.FirstOrDefault(g => g.Id == groupId)?.Name;
+            var group = oldName is null ? null : Groups.FirstOrDefault(g => g.Name.Equals(oldName, StringComparison.OrdinalIgnoreCase)) ?? CreateGroup(oldName);
+            next.GroupId = group?.Id;
+        }
+        Store.Save(next);
+        if (asCopy) { Notes.Insert(0, next); NotifyChanged(); OpenNote(next); return next; }
+        existing!.Title = next.Title; existing.Color = next.Color; existing.Blocks = next.Blocks; existing.GroupId = next.GroupId;
+        existing.ModifiedAt = next.ModifiedAt; existing.DeletedAt = null; existing.ConflictOf = next.ConflictOf;
+        if (Windows.TryGetValue(existing.Id, out var window)) window.ReloadAfterSync(true, "已恢复历史版本");
+        NotifyChanged(); OpenNote(existing); return existing;
+    }
+    private static IEnumerable<string> HistoryImages(IEnumerable<NoteBlock> blocks)
+    {
+        foreach (var block in blocks)
+        {
+            foreach (var inline in block.Inlines) if (inline.AssetId is { } id) yield return id;
+            foreach (var id in HistoryImages(block.Children)) yield return id;
+        }
+    }
 
     public void ShowSearch(string? query)
     {
@@ -214,6 +277,7 @@ public sealed class StickyWorkspace
 
     public MergeResult ApplySyncedSnapshot(SyncSnapshot captured, SyncSnapshot incoming, CancellationToken token = default)
     {
+        using var historyContext = Store.History.WithContext("sync", Guid.NewGuid().ToString("N"));
         token.ThrowIfCancellationRequested();
         var current = CaptureForSync();
         // Edits made after the first capture own the original editor; incoming competing content becomes a copy.

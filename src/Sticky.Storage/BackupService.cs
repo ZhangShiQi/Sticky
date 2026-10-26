@@ -28,7 +28,10 @@ public static class BackupService
 
     public static List<Note> Import(NoteStore store, string source)
     {
+        using var historyContext = store.History.WithContext("import", Guid.NewGuid().ToString("N"));
         using var archive = ZipFile.OpenRead(source);
+        if (archive.GetEntry("history/baseline.json") is not null)
+            throw new InvalidDataException("这是完整历史备份，请退出 Sticky 后解压到新的空 Data 目录；不能通过普通便签导入合并时间轴。");
         if (archive.Entries.Count > 10000) throw new InvalidDataException("备份包含过多文件。");
         var notes = new List<Note>();
         var importedGroups = new List<NoteGroup>();
@@ -110,9 +113,7 @@ public static class BackupService
         {
             foreach (var path in written)
             {
-                if (File.Exists(path)) File.Delete(path);
-                foreach (var backup in WorkspaceFiles.BackupCandidates(store.Root, path))
-                    if (File.Exists(backup)) File.Delete(backup);
+                store.RollbackImportedNote(Guid.Parse(Path.GetFileNameWithoutExtension(path)));
             }
             store.SaveGroups(originalGroups);
             throw;

@@ -9,7 +9,7 @@ using Sticky.Core;
 
 namespace Sticky.App;
 
-public enum SettingsSection { Sync, Data, Typography, Application, Updates }
+public enum SettingsSection { Sync, Data, Typography, Application, Updates, History }
 
 public partial class SettingsWindow : Window
 {
@@ -18,6 +18,7 @@ public partial class SettingsWindow : Window
     private bool _loadingUpdates = true;
     public string DataPath => _workspace.Store.Root;
     public string BackupsPath => _workspace.Store.BackupsDirectory;
+    public string HistoryPath => _workspace.Store.History.DirectoryPath;
     public string ApplicationVersion => "Sticky " + typeof(SettingsWindow).Assembly.GetName().Version?.ToString(3);
     public string StorageMode => AppPaths.IsPortableBuild || File.Exists(Path.Combine(AppContext.BaseDirectory, "portable.flag")) ? "便携模式 · 数据保存在程序目录旁" : "本地模式 · 数据保存在此设备";
 
@@ -83,6 +84,12 @@ public partial class SettingsWindow : Window
     {
         try { Process.Start(new ProcessStartInfo("explorer.exe") { ArgumentList = { BackupsPath }, UseShellExecute = true }); }
         catch (Exception ex) { StickyWorkspace.ShowError("无法打开备份目录", ex); }
+    }
+    private void OpenTimeline(object sender, RoutedEventArgs e) => _workspace.ShowHistory();
+    private void OpenHistoryFolder(object sender, RoutedEventArgs e)
+    {
+        try { _workspace.Store.History.Flush(); Process.Start(new ProcessStartInfo("explorer.exe") { ArgumentList = { HistoryPath }, UseShellExecute = true }); }
+        catch (Exception ex) { StickyWorkspace.ShowError("无法打开历史目录", ex); }
     }
     private void LoadTypographyFields(EditorPreferences preferences)
     {

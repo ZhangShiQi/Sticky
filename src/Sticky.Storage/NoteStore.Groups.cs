@@ -42,7 +42,8 @@ public sealed partial class NoteStore
     public void SaveGroups(List<NoteGroup> groups)
     {
         ValidateGroups(groups);
-        AtomicWrite(Path.Combine(Root, "groups.json"), JsonSerializer.SerializeToUtf8Bytes(new GroupCatalog { Groups = groups }, JsonOptions));
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(new GroupCatalog { Groups = groups }, JsonOptions);
+        History.WriteDocument("groups.json", bytes, () => AtomicWrite(Path.Combine(Root, "groups.json"), bytes));
     }
 
     private static void ValidateGroups(List<NoteGroup>? groups)

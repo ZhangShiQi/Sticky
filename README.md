@@ -4,7 +4,7 @@
 
 ## 使用 Windows 便携版
 
-从 [GitHub Releases](https://github.com/ZhangShiQi/Sticky/releases) 获取已发布的 Windows x64 便携包，或自行打包生成 `dist/Sticky-0.3.0-win-x64-portable.zip`，完整解压后双击根目录的 `Sticky.exe`。目标电脑不需要安装 .NET SDK、.NET Runtime 或 Git。请保留随包的 `tools` 文件夹，包含 WPF 程序、Git 和 Git Credential Manager。源码仓库不包含发布包；从源码获取后，可按下文运行打包脚本生成。0.3.0 引入稳定启动器布局，需要保留完整程序目录。
+从 [GitHub Releases](https://github.com/ZhangShiQi/Sticky/releases) 获取已发布的 Windows x64 便携包，或自行打包生成 `dist/Sticky-0.5.0-win-x64-portable.zip`，完整解压后双击根目录的 `Sticky.exe`。目标电脑不需要安装 .NET SDK、.NET Runtime 或 Git。请保留随包的 `tools` 文件夹，包含 WPF 程序、Git 和 Git Credential Manager。源码仓库不包含发布包；从源码获取后，可按下文运行打包脚本生成。当前版本为 0.5.0，发行包与更新记录见 Releases。
 
 便携版自动将数据存到 exe 旁边的 `Data`，不依赖当前工作目录，也不读取开发预览 `.local-demo` 中的便签。发布包是空白工作空间，不包含开发机上的便签、仓库配置、Git 历史或凭据。原有便签可先导出 ZIP，再在便携版导入。
 
@@ -140,6 +140,10 @@ JSON 是正文的唯一事实来源。图片以内容哈希去重；使用相对
 检测到无效便签 JSON 时，尝试读取 `backups` 中的 `.bak`，将损坏原文件保留到 `backups/corrupt` 并提示用户；无法恢复的文件不删除。比当前版本更新的数据格式会保留并跳过，不会降级写回。升级时自动将原先与正常文件并排的 `.bak` 移入专用目录，重名时保留双方备份；迁移失败则保留旧文件并提示。自动备份只保留上一版本，建议定期导出 ZIP。
 
 便签、图片与 ZIP 均以明文保存。回收站目前不提供永久删除；移除图片后保留资源文件，避免影响备份与历史恢复。请使用应用内的 GitHub 同步入口，不要直接同步运行中的整个数据目录。
+
+## 本地历史与重放
+
+本地历史独立于 GitHub。在管理页「时间轴」、便签「··· → 历史版本与重放」或「设置 → 历史与重放」打开统一时间轴。左侧多选便签，右侧顶部统一显示时间刻度，工作空间以「SVG 操作图标 + 下方便签标题」逐项展示，便签轨道复用相同图标，悬停可读操作说明，点击可精确定位；下方同时显示所选便签在该时刻的富文本和图片，支持回放、对比及恢复。窗口位置等界面操作不进入用户时间轴。播放不修改当前工作空间；恢复追加新记录。历史保存在 `Data/history`，不会随 Git 同步上传，连续输入合并展示；可以从时间轴导出完整历史备份。详情与格式见 [本地时间轴与重放](docs/history.md)。
 
 ## GitHub 同步
 
