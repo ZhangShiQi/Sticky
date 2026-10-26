@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="title description">
+  <title id="title">Sticky</title>
+  <desc id="description">A warm yellow folded note on a deep green rounded square.</desc>
+  <rect x="16" y="16" width="480" height="480" rx="112" fill="#2F5346" />
+  <path d="M144 96 H368 Q400 96 400 128 V304 L288 416 H144 Q112 416 112 384 V128 Q112 96 144 96 Z" fill="#FFF1CA" />
+  <path d="M288 416 V336 Q288 304 320 304 H400 Z" fill="#DDB76B" />
+  <path d="M176 176 H336 M176 240 H304" fill="none" stroke="#2F5346" stroke-width="24" stroke-linecap="round" />
+</svg>

@@ -10,6 +10,7 @@ public partial class App : Application
     private Mutex? _mutex;
     private StickyWorkspace? _workspace;
     private System.Windows.Forms.NotifyIcon? _tray;
+    private System.Drawing.Icon? _trayIcon;
     public bool StartWorkspaceOnStartup { get; set; } = true;
 
     protected override void OnStartup(StartupEventArgs e)
@@ -19,11 +20,12 @@ public partial class App : Application
         try
         {
             var root = AppPaths.ResolveDataDirectory(e.Args);
+            var startup = e.Args.Contains("--startup", StringComparer.Ordinal);
             var key = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(root.TrimEnd(Path.DirectorySeparatorChar).ToUpperInvariant())));
             _mutex = new Mutex(true, @"Local\Sticky-" + key, out var firstInstance);
             if (!firstInstance)
             {
-                MessageBox.Show("这个工作空间的 Sticky 已在运行，请从任务栏托盘图标打开便签管理。", "Sticky");
+                if (!startup) MessageBox.Show("这个工作空间的 Sticky 已在运行，请从任务栏托盘图标打开便签管理。", "Sticky");
                 Shutdown();
                 return;
             }
@@ -31,10 +33,10 @@ public partial class App : Application
             var main = new MainWindow(_workspace);
             MainWindow = main;
             CreateTray(_workspace);
-            main.Show();
+            if (!startup) main.Show();
             _workspace.RestoreWindows();
             _workspace.Sync.Start();
-            if (_workspace.Notes.Count == 0 && _workspace.Store.Warnings.Count == 0) _workspace.CreateNote();
+            if (!startup && _workspace.Notes.Count == 0 && _workspace.Store.Warnings.Count == 0) _workspace.CreateNote();
             if (_workspace.Store.Warnings.Count > 0)
                 MessageBox.Show(string.Join("\n", _workspace.Store.Warnings), "数据恢复提示", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
@@ -50,6 +52,7 @@ public partial class App : Application
     protected override void OnExit(ExitEventArgs e)
     {
         _tray?.Dispose();
+        _trayIcon?.Dispose();
         _workspace?.Sync.Dispose();
         _mutex?.Dispose();
         base.OnExit(e);
@@ -65,7 +68,10 @@ public partial class App : Application
         Add("设置…", workspace.ShowSettings);
         menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
         Add("退出 Sticky", () => { if (workspace.PrepareExit()) Shutdown(); });
-        _tray = new System.Windows.Forms.NotifyIcon { Text = "Sticky · 本地便签", Icon = System.Drawing.SystemIcons.Application,
+        using (var stream = GetResourceStream(new Uri("pack://application:,,,/Sticky;component/Assets/Sticky.ico")).Stream)
+        using (var icon = new System.Drawing.Icon(stream, System.Windows.Forms.SystemInformation.SmallIconSize))
+            _trayIcon = (System.Drawing.Icon)icon.Clone();
+        _tray = new System.Windows.Forms.NotifyIcon { Text = "Sticky · 本地便签", Icon = _trayIcon,
             ContextMenuStrip = menu, Visible = true };
         _tray.DoubleClick += (_, _) => Dispatcher.BeginInvoke(workspace.ShowManager);
     }

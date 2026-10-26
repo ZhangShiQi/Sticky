@@ -1,6 +1,7 @@
 <Window x:Class="Sticky.App.SearchWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Icon="pack://application:,,,/Sticky;component/Assets/Sticky.ico"
         Title="搜索便签 · Sticky" Width="700" Height="560" MinWidth="540" MinHeight="360" WindowStartupLocation="CenterScreen">
   <Window.Resources><BooleanToVisibilityConverter x:Key="BoolVisibility" /></Window.Resources>
   <Grid Margin="28">

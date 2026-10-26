@@ -21,10 +21,12 @@ public sealed class StickyWorkspace
     public SearchWindow? Search { get; private set; }
     public SyncCoordinator Sync { get; }
     public SettingsWindow? Settings { get; private set; }
+    public StartupRegistration Startup { get; }
 
-    public StickyWorkspace(string root)
+    public StickyWorkspace(string root, StartupRegistration? startup = null)
     {
         Store = new NoteStore(root);
+        Startup = startup ?? new StartupRegistration(Environment.ProcessPath ?? System.IO.Path.Combine(AppContext.BaseDirectory, "Sticky.exe"), AppContext.BaseDirectory, Store.Root);
         Notes = Store.LoadNotes();
         Groups = Store.LoadGroups();
         // Recover names for externally copied notes without dropping their membership.

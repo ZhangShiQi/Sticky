@@ -7,7 +7,7 @@ public static class TextPrompt
 {
     public static string? Show(Window owner, string title, string label, string value = "", int maxLength = 50, bool allowEmpty = false)
     {
-        var dialog = new Window { Title = title, Owner = owner, Width = 370, SizeToContent = SizeToContent.Height,
+        var dialog = new Window { Title = title, Owner = owner, Icon = owner.Icon, Width = 370, SizeToContent = SizeToContent.Height,
             ResizeMode = ResizeMode.NoResize, WindowStartupLocation = WindowStartupLocation.CenterOwner, ShowInTaskbar = false };
         var panel = new StackPanel { Margin = new Thickness(24) };
         panel.Children.Add(new TextBlock { Text = label, Margin = new Thickness(0, 0, 0, 12) });

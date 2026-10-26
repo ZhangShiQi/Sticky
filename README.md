@@ -4,7 +4,7 @@
 
 ## 使用 Windows 便携版
 
-获取打包生成的 `dist/Sticky-0.1.5-win-x64-portable.zip`，完整解压后双击 `Sticky.exe`。目标电脑不需要安装 .NET SDK、.NET Runtime 或 Git。请保留随包的 `tools` 文件夹，GitHub 同步会优先使用其中的 Git 和 Git Credential Manager。源码仓库不包含发布包；从源码获取后，可按下文运行打包脚本生成。
+获取打包生成的 `dist/Sticky-0.1.6-win-x64-portable.zip`，完整解压后双击 `Sticky.exe`。目标电脑不需要安装 .NET SDK、.NET Runtime 或 Git。请保留随包的 `tools` 文件夹，GitHub 同步会优先使用其中的 Git 和 Git Credential Manager。源码仓库不包含发布包；从源码获取后，可按下文运行打包脚本生成。
 
 便携版自动将数据存到 exe 旁边的 `Data`，不依赖当前工作目录，也不读取开发预览 `.local-demo` 中的便签。发布包是空白工作空间，不包含开发机上的便签、仓库配置、Git 历史或凭据。原有便签可先导出 ZIP，再在便携版导入。
 
@@ -64,6 +64,10 @@
 快捷键：Ctrl+N 新建，Ctrl+F 打开独立搜索，Ctrl+S 保存，F2 编辑，Esc 完成编辑，Ctrl+B / I / U 修改格式，Ctrl+Z / Y 撤销/重做正文编辑。在分组页新建便签会自动放入该分组。
 
 关闭某张便签只关闭窗口，内容仍在管理页。关闭管理页会保存并隐藏管理窗口，打开的便签继续显示，应用留在系统托盘。双击托盘图标或使用便签「··· → 便签管理」可以重新打开管理页。彻底退出请使用「设置 → 应用 → 退出 Sticky」或托盘的退出入口；下次启动恢复退出时打开的便签。
+
+「设置 → 应用 → 开机自动运行」默认关闭，勾选即生效，不需要管理员权限。登录 Windows 后恢复之前打开的便签，管理页留在托盘；不会凭空新建空白便签。启动命令记录当前程序和绝对数据目录，支持便携 exe 和通过 dotnet 启动的开发版。每个 Windows 用户保留一个 Sticky 启动项，启用新位置会替换旧位置；移动程序或数据目录后，请在新位置重新开启。它不参与 GitHub 同步，也不会因复制 Data 到另一台电脑而自动启用。实现使用当前用户的 [Windows Run 启动项](https://learn.microsoft.com/en-us/windows/win32/setupapi/run-and-runonce-registry-keys)；若在 Windows 的启动应用设置中禁用了 Sticky，需要在系统设置中重新允许它运行。
+
+应用图标源文件为 `src/Sticky.App/Assets/Sticky.svg`，墨绿底色配暖黄折角便签。exe、窗口、任务栏、托盘和侧栏使用同一设计；侧栏为矢量，Windows ICO 包含 16–256 像素的 9 种尺寸。修改 SVG 后运行 `powershell.exe -NoProfile -STA -File scripts/generate-icon.ps1`，即可重新生成 ICO、WPF 矢量资源和预览，无需第三方工具。便携包同时附带 `assets/Sticky.svg`。
 
 ## 数据与备份
 

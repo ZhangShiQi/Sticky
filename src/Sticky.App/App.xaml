@@ -3,9 +3,12 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              ShutdownMode="OnExplicitShutdown">
   <Application.Resources>
+    <ResourceDictionary>
+    <ResourceDictionary.MergedDictionaries><ResourceDictionary Source="Assets/StickyIcon.xaml" /></ResourceDictionary.MergedDictionaries>
     <SolidColorBrush x:Key="Ink" Color="#292B32" />
     <SolidColorBrush x:Key="Muted" Color="#747780" />
     <Style TargetType="Window">
+      <Setter Property="Icon" Value="pack://application:,,,/Sticky;component/Assets/Sticky.ico" />
       <Setter Property="FontFamily" Value="Segoe UI, Microsoft YaHei UI" />
       <Setter Property="FontSize" Value="14" />
       <Setter Property="Foreground" Value="{StaticResource Ink}" />
@@ -47,5 +50,6 @@
       <Setter Property="BorderThickness" Value="1" /><Setter Property="Background" Value="White" />
       <Setter Property="VerticalContentAlignment" Value="Center" />
     </Style>
+    </ResourceDictionary>
   </Application.Resources>
 </Application>

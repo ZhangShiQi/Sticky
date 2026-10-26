@@ -14,6 +14,7 @@ public enum SettingsSection { Sync, Data, Typography, Application }
 public partial class SettingsWindow : Window
 {
     private readonly StickyWorkspace _workspace;
+    private bool _updatingStartup = true;
     public string DataPath => _workspace.Store.Root;
     public string BackupsPath => _workspace.Store.BackupsDirectory;
     public string ApplicationVersion => "Sticky " + typeof(SettingsWindow).Assembly.GetName().Version?.ToString(3);
@@ -26,8 +27,49 @@ public partial class SettingsWindow : Window
         DataContext = this;
         SyncHost.Content = new SyncSettingsView(workspace);
         LoadTypographyFields(workspace.EditorPreferences);
+        RefreshStartup();
     }
-    public void SelectSection(SettingsSection section) => SettingsTabs.SelectedIndex = (int)section;
+    public void SelectSection(SettingsSection section)
+    {
+        SettingsTabs.SelectedIndex = (int)section;
+        if (section == SettingsSection.Application) RefreshStartup();
+    }
+    private void RefreshStartup()
+    {
+        _updatingStartup = true;
+        try
+        {
+            StartupCheckBox.IsChecked = _workspace.Startup.IsEnabled;
+            StartupStatus.Foreground = System.Windows.Media.Brushes.DarkGreen;
+            StartupStatus.Text = StartupCheckBox.IsChecked == true ? "已启用当前工作空间的开机自动运行。"
+                : _workspace.Startup.HasRegistration ? "已有其他位置的 Sticky 启动项。勾选后会切换到当前程序和工作空间。" : "未启用开机自动运行。";
+        }
+        catch (Exception ex)
+        {
+            StartupStatus.Foreground = System.Windows.Media.Brushes.Firebrick;
+            StartupStatus.Text = "无法读取启动设置：" + ex.Message;
+        }
+        finally { _updatingStartup = false; }
+    }
+    private void StartupChanged(object sender, RoutedEventArgs e)
+    {
+        if (_updatingStartup) return;
+        var enabled = StartupCheckBox.IsChecked == true;
+        try
+        {
+            _workspace.Startup.SetEnabled(enabled);
+            StartupStatus.Foreground = System.Windows.Media.Brushes.DarkGreen;
+            StartupStatus.Text = enabled ? "已启用，下次登录 Windows 时自动运行。" : "已关闭开机自动运行。";
+        }
+        catch (Exception ex)
+        {
+            _updatingStartup = true;
+            try { StartupCheckBox.IsChecked = !enabled; }
+            finally { _updatingStartup = false; }
+            StartupStatus.Foreground = System.Windows.Media.Brushes.Firebrick;
+            StartupStatus.Text = "未能更改启动设置：" + ex.Message;
+        }
+    }
     private void OpenDataFolder(object sender, RoutedEventArgs e)
     {
         try { Process.Start(new ProcessStartInfo("explorer.exe") { ArgumentList = { DataPath }, UseShellExecute = true }); }

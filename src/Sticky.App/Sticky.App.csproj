@@ -7,7 +7,8 @@
     <AssemblyName>Sticky</AssemblyName>
     <RootNamespace>Sticky.App</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <Version>0.1.5</Version>
+    <ApplicationIcon>Assets\Sticky.ico</ApplicationIcon>
+    <Version>0.1.6</Version>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Sticky.Core\Sticky.Core.csproj" />
@@ -15,5 +16,6 @@
     <ProjectReference Include="..\Sticky.Sync.Git\Sticky.Sync.Git.csproj" />
   </ItemGroup>
   <ItemGroup><Using Remove="System.Windows.Forms" /><Using Remove="System.Drawing" /></ItemGroup>
+  <ItemGroup><Resource Include="Assets\Sticky.ico" /><Resource Include="Assets\Sticky.svg" /></ItemGroup>
   <ItemGroup Condition="'$(StickyPortable)' == 'true'"><AssemblyMetadata Include="StickyPortable" Value="true" /></ItemGroup>
 </Project>

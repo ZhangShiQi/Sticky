@@ -60,6 +60,8 @@ Copy-Item -LiteralPath (Join-Path $runtimePackage "$runtimeVersion\THIRD-PARTY-N
 $desktopLicense = Join-Path $nugetRoot "microsoft.windowsdesktop.app.runtime.win-x64\$runtimeVersion\LICENSE"
 Copy-Item -LiteralPath $desktopLicense -Destination (Join-Path $licenses 'WPF-WINFORMS-LICENSE.txt')
 Copy-Item -LiteralPath (Join-Path $projectRoot 'packaging\使用说明.txt') -Destination (Join-Path $OutputDirectory '使用说明.txt')
+New-Item -ItemType Directory -Path (Join-Path $OutputDirectory 'assets') | Out-Null
+Copy-Item -LiteralPath (Join-Path $projectRoot 'src\Sticky.App\Assets\Sticky.svg') -Destination (Join-Path $OutputDirectory 'assets\Sticky.svg')
 Copy-Item -LiteralPath (Join-Path $projectRoot 'packaging\THIRD-PARTY-SOURCES.txt') -Destination (Join-Path $licenses 'THIRD-PARTY-SOURCES.txt')
 [System.IO.File]::WriteAllText((Join-Path $OutputDirectory 'portable.flag'), 'Sticky portable workspace; data is stored beside Sticky.exe in Data.')
 $manifest = [ordered]@{
