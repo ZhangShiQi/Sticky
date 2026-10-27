@@ -14,32 +14,33 @@ internal static partial class Program
     private static void InteractionPreferences()
     {
         var legacy = Store("legacy-interaction-settings");
-        File.WriteAllText(Path.Combine(legacy.Root, "device", "editor.json"), "{\"schemaVersion\":1,\"defaultFontSize\":20,\"paragraphSpacing\":4}");
+        File.WriteAllText(Path.Combine(legacy.Root, "device", "editor.json"), "{\"schemaVersion\":1,\"defaultFontSize\":20,\"paragraphSpacing\":4,\"showHeaderOnHover\":true}");
         var loaded = legacy.LoadEditorPreferences();
-        Check(loaded.RandomizeNewNoteColor && loaded.ShowHeaderOnHover && loaded.DefaultFontSize == 20, "Old preference files did not get the new enabled defaults.");
+        Check(loaded.RandomizeNewNoteColor && loaded.ShowHeaderOnHover && !loaded.AutoHideHeader && loaded.DefaultFontSize == 20, "Old preference files did not keep titles visible by default.");
         var workspace = new StickyWorkspace(Path.Combine(_root, "interaction-settings"));
         var original = new Note { Color = "rose" }; workspace.Store.Save(original); workspace.Notes.Add(original); workspace.OpenNote(original);
         try
         {
-            Check(workspace.EditorPreferences.RandomizeNewNoteColor && workspace.EditorPreferences.ShowHeaderOnHover, "New settings were not enabled by default.");
+            Check(workspace.EditorPreferences.RandomizeNewNoteColor && workspace.EditorPreferences.ShowHeaderOnHover && !workspace.EditorPreferences.AutoHideHeader, "New settings did not keep the title bar visible by default.");
             workspace.CreateNote();
             var randomized = workspace.Notes[0];
             Check(NotePalette.Choices.Any(c => c.Key == randomized.Color) && workspace.Store.LoadNotes().Single(n => n.Id == randomized.Id).Color == randomized.Color, "New-note color was invalid or not saved.");
             workspace.ShowSettings(SettingsSection.Typography);
             var settings = workspace.Settings!;
             ((CheckBox)settings.FindName("RandomColorCheckBox")).IsChecked = false;
+            ((CheckBox)settings.FindName("AutoHideHeaderCheckBox")).IsChecked = true;
             ((CheckBox)settings.FindName("HoverHeaderCheckBox")).IsChecked = false;
             ClickSaveTypography(settings);
-            Check(!workspace.EditorPreferences.RandomizeNewNoteColor && !workspace.EditorPreferences.ShowHeaderOnHover, "Settings UI did not save the new switches.");
+            Check(!workspace.EditorPreferences.RandomizeNewNoteColor && !workspace.EditorPreferences.ShowHeaderOnHover && workspace.EditorPreferences.AutoHideHeader, "Settings UI did not save the new switches.");
             workspace.CreateNote();
             Check(workspace.Notes[0].Color == "amber" && original.Color == "rose", "Disabling random colors changed old notes or failed to restore the default color.");
-            Check(!workspace.Store.LoadEditorPreferences().RandomizeNewNoteColor && !workspace.Store.LoadEditorPreferences().ShowHeaderOnHover, "Behavior settings did not persist.");
+            Check(!workspace.Store.LoadEditorPreferences().RandomizeNewNoteColor && !workspace.Store.LoadEditorPreferences().ShowHeaderOnHover && workspace.Store.LoadEditorPreferences().AutoHideHeader, "Behavior settings did not persist.");
             ((TextBox)settings.FindName("DefaultFontSizeBox")).Text = "22"; ClickSaveTypography(settings);
-            Check(!workspace.EditorPreferences.RandomizeNewNoteColor && !workspace.EditorPreferences.ShowHeaderOnHover, "Saving typography reset the behavior switches.");
+            Check(!workspace.EditorPreferences.RandomizeNewNoteColor && !workspace.EditorPreferences.ShowHeaderOnHover && workspace.EditorPreferences.AutoHideHeader, "Saving typography reset the behavior switches.");
         }
         finally { workspace.PrepareExit(); }
         var restarted = new StickyWorkspace(workspace.Store.Root);
-        try { Check(!restarted.EditorPreferences.RandomizeNewNoteColor && !restarted.EditorPreferences.ShowHeaderOnHover, "Restart reset the new switches."); }
+        try { Check(!restarted.EditorPreferences.RandomizeNewNoteColor && !restarted.EditorPreferences.ShowHeaderOnHover && restarted.EditorPreferences.AutoHideHeader, "Restart reset the new switches."); }
         finally { restarted.PrepareExit(); }
     }
 
@@ -52,7 +53,8 @@ internal static partial class Program
 
     private static void HoverHeader()
     {
-        var workspace = new StickyWorkspace(Path.Combine(_root, "hover-header")); workspace.CreateNote(); Pump(30);
+        var workspace = new StickyWorkspace(Path.Combine(_root, "hover-header"));
+        workspace.UpdateEditorPreferences(new EditorPreferences { AutoHideHeader = true }); workspace.CreateNote(); Pump(30);
         var note = workspace.Notes[0]; var window = workspace.Windows[note.Id];
         var editor = (RichTextBox)window.FindName("Editor");
         var header = (Border)window.FindName("HeaderBar");
@@ -77,7 +79,7 @@ internal static partial class Program
             Check(window.IsHeaderExpanded, "Leaving the note to use its menu collapsed the header.");
             menu.IsOpen = false; Pump(150); Pointer(false);
             Check(window.IsHeaderExpanded == window.IsEditing, "Closing the menu did not restore the editing/reading header state.");
-            workspace.UpdateEditorPreferences(new EditorPreferences { ShowHeaderOnHover = false });
+            workspace.UpdateEditorPreferences(new EditorPreferences { AutoHideHeader = true, ShowHeaderOnHover = false });
             window.FinishEditing(); Pointer(true);
             Check(!window.IsHeaderExpanded, "The hover switch did not apply to an open window.");
             window.EnterEditMode(); Pointer(false);
@@ -99,6 +101,7 @@ internal static partial class Program
     private static void EditingHeaderStability()
     {
         var workspace = new StickyWorkspace(Path.Combine(_root, "editing-header-stability"));
+        workspace.UpdateEditorPreferences(new EditorPreferences { AutoHideHeader = true });
         workspace.CreateNote(); Pump(30);
         var note = workspace.Notes[0]; var window = workspace.Windows[note.Id];
         var editor = (RichTextBox)window.FindName("Editor");

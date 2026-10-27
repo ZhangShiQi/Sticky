@@ -89,5 +89,6 @@ public sealed class EditorPreferences
     public double DefaultFontSize { get; set; } = 16;
     public double ParagraphSpacing { get; set; } = 8;
     public bool RandomizeNewNoteColor { get; set; } = true;
+    public bool AutoHideHeader { get; set; }
     public bool ShowHeaderOnHover { get; set; } = true;
 }

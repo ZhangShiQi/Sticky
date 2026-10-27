@@ -33,6 +33,7 @@ public partial class NoteWindow : Window
     private bool _nativeMoving;
     private string _historyBatch = Guid.NewGuid().ToString("N");
     private bool _showHeaderOnHover;
+    private bool _autoHideHeader;
     private static readonly DependencyPropertyKey IsHeaderExpandedPropertyKey = DependencyProperty.RegisterReadOnly(nameof(IsHeaderExpanded), typeof(bool), typeof(NoteWindow), new PropertyMetadata(false));
     public static readonly DependencyProperty IsHeaderExpandedProperty = IsHeaderExpandedPropertyKey.DependencyProperty;
     public bool IsHeaderExpanded => (bool)GetValue(IsHeaderExpandedProperty);
@@ -46,9 +47,9 @@ public partial class NoteWindow : Window
         _state = state;
         _color = note.Color;
         _showHeaderOnHover = workspace.EditorPreferences.ShowHeaderOnHover;
+        _autoHideHeader = workspace.EditorPreferences.AutoHideHeader;
         InitializeComponent();
         TitleBox.Text = note.Title;
-        Title = note.DisplayTitle + " · Sticky";
         ApplyTheme();
         Editor.Document = DocumentCodec.Decode(note.Blocks, workspace.Store, darkTheme: true, workspace.EditorPreferences);
         Editor.ContextMenu = BuildNoteMenu();
@@ -82,6 +83,7 @@ public partial class NoteWindow : Window
         MouseEnter += (_, _) => { _pointerOver = true; UpdateHeaderState(); };
         MouseLeave += (_, _) => { _pointerOver = false; UpdateHeaderState(); };
         UpdateCounters();
+        UpdateHeaderState();
         Deactivated += (_, _) => { if (_modalDepth == 0 && !_menuOpen) FinishEditing(); };
     }
 
@@ -115,7 +117,7 @@ public partial class NoteWindow : Window
         _loading = true;
         try
         {
-            TitleBox.Text = _note.Title; _color = _note.Color; Title = _note.DisplayTitle + " · Sticky";
+            TitleBox.Text = _note.Title; _color = _note.Color;
             if (reloadBody) { Editor.Document = DocumentCodec.Decode(_note.Blocks, _workspace.Store, darkTheme: true, _workspace.EditorPreferences); AttachImageMenus(); }
             ApplyTheme(); _dirty = false;
             SaveStatus.Text = status; SaveIndicator.Content = "✓"; UpdateCounters();
@@ -138,6 +140,7 @@ public partial class NoteWindow : Window
         {
             DocumentCodec.ApplyDefaults(Editor.Document, preferences);
             _showHeaderOnHover = preferences.ShowHeaderOnHover;
+            _autoHideHeader = preferences.AutoHideHeader;
             UpdateHeaderState();
         }
         finally { _loading = wasLoading; }
@@ -146,7 +149,7 @@ public partial class NoteWindow : Window
     // IME candidate windows can temporarily take mouse hit-testing away from the note.
     // Keep the editor's geometry stable until editing ends; hover only controls reading mode.
     private void UpdateHeaderState() => SetValue(IsHeaderExpandedPropertyKey,
-        IsEditing || _menuOpen || _dragging || (_showHeaderOnHover && _pointerOver));
+        !_autoHideHeader || IsEditing || _menuOpen || _dragging || (_showHeaderOnHover && _pointerOver));
 
     private void StartEditing(object sender, MouseButtonEventArgs e) { if (!IsEditing) EnterEditMode(); }
     private void OnWindowKeyDown(object sender, KeyEventArgs e)
@@ -203,6 +206,13 @@ public partial class NoteWindow : Window
         var hasImage = EnumerateImages(Editor.Document.Blocks).Any();
         Placeholder.Visibility = text.Length == 0 && !hasImage ? Visibility.Visible : Visibility.Collapsed;
         WordCount.Text = $"{text.Length} 字";
+        UpdateTitle();
+    }
+
+    private void UpdateTitle()
+    {
+        HeaderTitle.Text = DocumentCodec.GetDisplayTitle(Editor.Document, TitleBox.Text);
+        Title = HeaderTitle.Text + " · Sticky";
     }
 
     public bool SaveNow(bool showError = true, string? historyReason = null)
@@ -225,7 +235,7 @@ public partial class NoteWindow : Window
             SaveStatus.Foreground = Brush("#526B4C");
             SaveIndicator.Content = "✓";
             SaveStatus.ToolTip = _workspace.Store.Root;
-            Title = _note.DisplayTitle + " · Sticky";
+            UpdateTitle();
             _workspace.NotifyChanged();
             return true;
         }

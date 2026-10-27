@@ -81,7 +81,8 @@ internal static partial class Program
         Run("Workspace navigation submits search on Enter and reuses categorized settings", SidebarAndSettings);
         Run("Startup settings toggle registration and recover from access failures", StartupSettings);
         Run("Startup command preserves quoted paths, workspace and dotnet host", StartupCommands);
-        Run("New-note colors and hover preferences default on, persist, and apply live", InteractionPreferences);
+        Run("Behavior preferences persist while legacy and new notes default to visible title bars", InteractionPreferences);
+        Run("Note titles update live and title bars remain visible unless auto-hide is enabled", HeaderTitlesAndVisibility);
         Run("Hover expands only the header, collapses on leave, and keeps menus usable", HoverHeader);
         Run("Editing header and caret stay stable across transient mouse leave events", EditingHeaderStability);
         Run("Application singleton blocks other processes and forwards activation", SingleInstance);

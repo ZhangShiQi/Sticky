@@ -36,7 +36,7 @@
         <Border.Style><Style TargetType="Border"><Setter Property="Height" Value="8" />
           <Style.Triggers><DataTrigger Binding="{Binding IsHeaderExpanded, RelativeSource={RelativeSource AncestorType=Window}}" Value="True"><Setter Property="Height" Value="32" /></DataTrigger></Style.Triggers>
         </Style></Border.Style>
-        <DockPanel Visibility="{Binding IsHeaderExpanded, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolVisibility}}" LastChildFill="False">
+        <DockPanel Visibility="{Binding IsHeaderExpanded, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolVisibility}}" LastChildFill="True">
           <Button DockPanel.Dock="Left" Content="＋" FontSize="22" Style="{StaticResource HeaderButton}" Click="NewNote" ToolTip="新建便签 · Ctrl+N" AutomationProperties.Name="新建便签" />
           <Button DockPanel.Dock="Right" Content="×" FontSize="22" Style="{StaticResource HeaderButton}" Click="CloseNote" ToolTip="关闭窗口，保留便签" AutomationProperties.Name="关闭便签" />
           <Button x:Name="MoreButton" DockPanel.Dock="Right" Content="···" FontSize="18" Style="{StaticResource HeaderButton}" Click="OpenMenu" ToolTip="分组、颜色和更多操作" AutomationProperties.Name="便签菜单" />
@@ -44,6 +44,8 @@
             <Border x:Name="ColorSwatch" Width="14" Height="14" CornerRadius="2" Background="#FFF1CA" BorderBrush="#80372C40" BorderThickness="1" />
           </Button>
           <Button x:Name="SaveIndicator" DockPanel.Dock="Right" Content="✓" Style="{StaticResource HeaderButton}" Click="ManualSave" ToolTip="{Binding Text, ElementName=SaveStatus}" AutomationProperties.Name="保存状态" />
+          <TextBlock x:Name="HeaderTitle" FontSize="12" FontWeight="SemiBold" Foreground="#372C40" Margin="3,0,6,0" VerticalAlignment="Center"
+                     TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}" AutomationProperties.Name="便签标题" />
         </DockPanel>
       </Border>
       <Grid Grid.Row="1" Margin="11,12,10,10">

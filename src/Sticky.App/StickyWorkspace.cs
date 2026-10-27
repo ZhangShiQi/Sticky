@@ -186,7 +186,8 @@ public sealed class StickyWorkspace
         NoteStore.ValidateEditorPreferences(preferences);
         if (!SaveAllNotes()) return false;
         var saved = new EditorPreferences { DefaultFontSize = preferences.DefaultFontSize, ParagraphSpacing = preferences.ParagraphSpacing,
-            RandomizeNewNoteColor = preferences.RandomizeNewNoteColor, ShowHeaderOnHover = preferences.ShowHeaderOnHover };
+            RandomizeNewNoteColor = preferences.RandomizeNewNoteColor, ShowHeaderOnHover = preferences.ShowHeaderOnHover,
+            AutoHideHeader = preferences.AutoHideHeader };
         Store.SaveEditorPreferences(saved);
         EditorPreferences = saved;
         foreach (var window in Windows.Values) window.ApplyEditorPreferences(saved);

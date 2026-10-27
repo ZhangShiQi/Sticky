@@ -1,4 +1,5 @@
 using System.IO;
+using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
@@ -13,6 +14,46 @@ namespace Sticky.App.Editor;
 public static class DocumentCodec
 {
     public static List<NoteBlock> Encode(FlowDocument document) => EncodeBlocks(document.Blocks);
+
+    public static string GetDisplayTitle(FlowDocument document, string title)
+    {
+        if (!string.IsNullOrWhiteSpace(title)) return title.Trim();
+        // Read the first text line without encoding the entire document on each keystroke.
+        // Walking text contexts excludes images and generated list numbering.
+        var line = new StringBuilder();
+        for (var p = document.ContentStart; p is not null && p.CompareTo(document.ContentEnd) < 0;)
+        {
+            var context = p.GetPointerContext(LogicalDirection.Forward);
+            if (context == TextPointerContext.Text)
+            {
+                var run = p.GetTextInRun(LogicalDirection.Forward);
+                foreach (var ch in run)
+                {
+                    if (ch is '\r' or '\n')
+                    {
+                        var candidate = line.ToString().Trim();
+                        if (candidate.Length > 0) return candidate;
+                        line.Clear();
+                    }
+                    else line.Append(ch);
+                }
+                p = p.GetPositionAtOffset(run.Length, LogicalDirection.Forward);
+            }
+            else
+            {
+                if (context == TextPointerContext.ElementStart && p.GetAdjacentElement(LogicalDirection.Forward) is LineBreak
+                    || context == TextPointerContext.ElementEnd && p.GetAdjacentElement(LogicalDirection.Forward) is Paragraph)
+                {
+                    var candidate = line.ToString().Trim();
+                    if (candidate.Length > 0) return candidate;
+                    line.Clear();
+                }
+                p = p.GetNextContextPosition(LogicalDirection.Forward);
+            }
+        }
+        var last = line.ToString().Trim();
+        return last.Length > 0 ? last : "未命名便签";
+    }
 
     private static List<NoteBlock> EncodeBlocks(BlockCollection blocks)
     {
