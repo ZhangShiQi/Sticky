@@ -1,4 +1,4 @@
-﻿param([string]$OutputDirectory)
+﻿param([string]$OutputDirectory, [switch]$ReadyToRun = $true)
 . "$PSScriptRoot\common.ps1"
 
 $projectDefinition = [xml](Get-Content -LiteralPath (Join-Path $projectRoot 'Directory.Build.props') -Raw)
@@ -37,11 +37,11 @@ $launcherDirectory = Join-Path $projectRoot ('.tools\launcher-publish-' + [Guid]
 Push-Location $projectRoot
 try {
     & $dotnet publish 'src\Sticky.App\Sticky.App.csproj' -c Release -r win-x64 --self-contained true `
-        -p:PublishProfile=Portable -p:StickyPortable=true -p:DebugType=None -p:DebugSymbols=false `
+        -p:PublishProfile=Portable -p:StickyPortable=true -p:DebugType=None -p:DebugSymbols=false -p:PublishReadyToRun=$($ReadyToRun.IsPresent) `
         -m:1 -nr:false -p:UseSharedCompilation=false --artifacts-path $publishArtifacts -o $publishDirectory --nologo
     if ($LASTEXITCODE -ne 0) { throw 'Portable publish failed.' }
     & $dotnet publish 'src\Sticky.Launcher\Sticky.Launcher.csproj' -c Release -r win-x64 --self-contained true `
-        -p:DebugType=None -p:DebugSymbols=false -m:1 -nr:false -p:UseSharedCompilation=false `
+        -p:DebugType=None -p:DebugSymbols=false -p:PublishReadyToRun=$($ReadyToRun.IsPresent) -m:1 -nr:false -p:UseSharedCompilation=false `
         --artifacts-path $publishArtifacts -o $launcherDirectory --nologo
     if ($LASTEXITCODE -ne 0) { throw 'Stable launcher publish failed.' }
 } finally { Pop-Location }
@@ -77,7 +77,7 @@ Copy-Item -LiteralPath (Join-Path $projectRoot 'packaging\THIRD-PARTY-SOURCES.tx
 [System.IO.File]::WriteAllText((Join-Path $OutputDirectory 'portable.flag'), 'Sticky portable workspace; data is stored beside Sticky.exe in Data.')
 $manifest = [ordered]@{
     application = 'Sticky'; version = $version; runtimeIdentifier = 'win-x64'; selfContained = $true; singleFile = $true
-    dotnetRuntime = $runtimeVersion; dataDirectory = 'Data'; gitVersion = '2.56.0.windows.3'; gcmVersion = '3.0.1'
+    dotnetRuntime = $runtimeVersion; dataDirectory = 'Data'; gitVersion = '2.56.0.windows.3'; gcmVersion = '3.0.1'; readyToRun = $ReadyToRun.IsPresent
     gitSource = $gitUrl; gitArchiveSha256 = $gitSha; gcmSource = $gcmUrl; gcmArchiveSha256 = $gcmSha
     executableSha256 = (Get-FileHash -LiteralPath (Join-Path $OutputDirectory 'Sticky.exe') -Algorithm SHA256).Hash.ToLowerInvariant()
     formatVersion = 2; launcherProtocol = 1; dataSchemaVersion = 1; runtimePath = 'tools/runtime/Sticky.exe'

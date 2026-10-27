@@ -5,6 +5,7 @@
     <ApplicationManifest>..\Sticky.App\app.manifest</ApplicationManifest>
     <PublishSingleFile>true</PublishSingleFile><IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile><PublishTrimmed>false</PublishTrimmed>
+    <PublishReadyToRun Condition="'$(RuntimeIdentifier)' != ''">true</PublishReadyToRun>
   </PropertyGroup>
   <ItemGroup><ProjectReference Include="..\Sticky.UpdateEngine\Sticky.UpdateEngine.csproj" /></ItemGroup>
 </Project>

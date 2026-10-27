@@ -6,6 +6,7 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        StartupTiming.Mark("launcher-entry");
         var root = AppContext.BaseDirectory;
         var diagnostic = false;
         try

@@ -30,31 +30,51 @@ public sealed class StickyWorkspace
     public UpdateCoordinator Updates { get; }
     public AiSettingsStore AiSettings { get; }
     public AiClient AiClient { get; }
+    private bool _restoringWindows;
+    private bool _restoreChanged;
+    private bool _restoreLayoutChanged;
 
     public StickyWorkspace(string root, StartupRegistration? startup = null, AiClient? aiClient = null)
+        : this(WorkspaceStartupData.Load(root), startup, aiClient) { }
+
+    public StickyWorkspace(WorkspaceStartupData data, StartupRegistration? startup = null, AiClient? aiClient = null)
     {
-        Store = new NoteStore(root);
+        Store = data.Store;
         AiSettings = new AiSettingsStore(Store.Root);
         AiClient = aiClient ?? new AiClient();
         Startup = startup ?? new StartupRegistration(LauncherContext.Root is string launcherRoot ? System.IO.Path.Combine(launcherRoot, "Sticky.exe")
             : Environment.ProcessPath ?? System.IO.Path.Combine(AppContext.BaseDirectory, "Sticky.exe"), LauncherContext.Root ?? AppContext.BaseDirectory, Store.Root);
-        Notes = Store.LoadNotes();
-        Groups = Store.LoadGroups();
-        // Recover names for externally copied notes without dropping their membership.
-        var recoveredGroups = false;
-        foreach (var id in Notes.Where(n => n.GroupId.HasValue).Select(n => n.GroupId!.Value).Distinct())
-            if (!Groups.Any(g => g.Id == id)) { Groups.Add(new NoteGroup { Id = id, Name = "恢复的分组 " + id.ToString("N")[..8] }); recoveredGroups = true; }
-        if (recoveredGroups) Store.SaveGroups(Groups);
-        Device = Store.LoadDeviceState();
-        EditorPreferences = Store.LoadEditorPreferences();
-        try { Store.History.Reconcile(); }
-        catch (Exception ex) { Store.Warnings.Add("历史暂不可读取，现有便签已保留：" + ex.Message); }
+        Notes = data.Notes;
+        Groups = data.Groups;
+        Device = data.Device;
+        EditorPreferences = data.Preferences;
         Sync = new SyncCoordinator(this);
         AiSettings.Changed += NotifyChanged;
         Updates = new UpdateCoordinator(this);
     }
 
-    public void NotifyChanged() => Changed?.Invoke();
+    public void NotifyChanged()
+    {
+        if (_restoringWindows) { _restoreChanged = true; return; }
+        Changed?.Invoke();
+    }
+
+    public async Task RestoreStartupWindowsAsync()
+    {
+        _restoringWindows = true;
+        try
+        {
+            RestoreWindows();
+            // Keep the batch open through Loaded/layout callbacks, which also capture positions.
+            await Application.Current.Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+        }
+        finally
+        {
+            _restoringWindows = false;
+            if (_restoreLayoutChanged) { _restoreLayoutChanged = false; SaveDevice(); }
+            if (_restoreChanged) { _restoreChanged = false; NotifyChanged(); }
+        }
+    }
 
     public void CreateNote(Guid? groupId = null, NoteWindow? near = null)
     {
@@ -356,6 +376,7 @@ public sealed class StickyWorkspace
 
     public bool SaveDevice()
     {
+        if (_restoringWindows) { _restoreLayoutChanged = true; return true; }
         try { Store.SaveDeviceState(Device); return true; }
         catch (Exception ex) { ShowError("无法保存窗口布局", ex); return false; }
     }

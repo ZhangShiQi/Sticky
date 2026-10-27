@@ -25,7 +25,7 @@ public sealed class LauncherEngine
     private SingleInstanceHost? _reservation;
     public LauncherEngine(string root, LauncherOptions? options = null)
     { _store = new LauncherStore(root); _options = options ?? new(); }
-    private void Point(string name) => _options.Checkpoint?.Invoke(name);
+    private void Point(string name) { StartupTiming.Mark(name); _options.Checkpoint?.Invoke(name); }
 
     public int Run(string data, bool startup = false)
     {
@@ -252,7 +252,9 @@ public sealed class LauncherEngine
     private void Start(LauncherState state, string slotId, string data, bool startup, UpdateTransaction? transaction)
     {
         var slot = VersionLayout.Slot(_store.Root, slotId);
+        Point("validation-start");
         VersionLayout.Validate(slot);
+        Point("validation-complete");
         var runtime = DurableFiles.Child(slot, VersionLayout.Runtime);
         var pipeName = "Sticky.Startup." + Guid.NewGuid().ToString("N");
         var nonce = Guid.NewGuid().ToString("N");
@@ -290,7 +292,9 @@ public sealed class LauncherEngine
             Point("initializing");
             if (reader.ReadLineAsync(timeout.Token).AsTask().GetAwaiter().GetResult() != "ready") throw new IOException("新版本未完成启动确认。");
             Point("ready");
-            if (child.WaitForExit((int)_options.StabilityTime.TotalMilliseconds)) throw new IOException("程序在启动确认后退出。");
+            // New/unconfirmed code must remain read-only throughout the rollback window.
+            if (transaction is not null && child.WaitForExit((int)_options.StabilityTime.TotalMilliseconds)) throw new IOException("程序在启动确认后退出。");
+            if (child.HasExited) throw new IOException("程序在启动确认前退出。");
             if (transaction is not null)
             {
                 var confirmed = state with { Active = slotId, Previous = state.Active == slotId ? state.Previous : state.Active, Revision = state.Revision + 1,
@@ -310,6 +314,14 @@ public sealed class LauncherEngine
                 Result(data, true, "新版已通过界面初始化确认；旧版和升级前数据快照均已保留。");
                 DurableFiles.Delete(_store.QueueFile);
                 DurableFiles.Delete(_store.PendingFile);
+            }
+            else
+            {
+                // Confirmed code can become interactive immediately. Still observe late crashes and
+                // fall back without restoring a stale data snapshot over edits made in this session.
+                Point("observing-confirmed");
+                if (child.WaitForExit((int)_options.StabilityTime.TotalMilliseconds) && child.ExitCode != 0)
+                    throw new IOException("已确认程序在启动后异常退出。");
             }
         }
         finally

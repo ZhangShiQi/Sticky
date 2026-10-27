@@ -19,6 +19,7 @@ public partial class App : Application
 
     protected override async void OnStartup(StartupEventArgs e)
     {
+        StartupTiming.Mark("runtime-entry");
         base.OnStartup(e);
         if (!StartWorkspaceOnStartup) return;
         if (e.Args.Length == 2 && e.Args[0] == "--apply-update")
@@ -37,6 +38,7 @@ public partial class App : Application
                 if (LauncherContext.Root is null) throw new IOException("启动确认缺少稳定启动器。");
                 handshake = await StartupHandshake.ConnectAsync(LauncherContext.Argument(e.Args, "--startup-pipe")!,
                     LauncherContext.Argument(e.Args, "--startup-nonce") ?? throw new IOException("缺少启动随机码。"), startupTimeout.Token);
+                StartupTiming.Mark("identity-authorized");
             }
             var startup = e.Args.Contains("--startup", StringComparer.Ordinal);
             var testKey = LauncherContext.Argument(e.Args, "--test-instance-key");
@@ -68,30 +70,32 @@ public partial class App : Application
                 Shutdown();
                 return;
             }
-            _workspace = new StickyWorkspace(root);
-            _workspace.StartupPending = managedStartup;
-            var main = new MainWindow(_workspace);
+            // File parsing/recovery and XAML construction have no shared mutable state.
+            var dataTask = Task.Run(() => WorkspaceStartupData.Load(root));
+            var main = Sticky.App.MainWindow.CreateLoadingShell();
             MainWindow = main;
+            StartupTiming.Mark("main-created");
+            var presentation = new StartupPresentation(main, startup);
+            await presentation.RenderAsync(startupTimeout.Token);
+            var prepared = await dataTask;
+            _workspace = new StickyWorkspace(prepared);
+            _workspace.StartupPending = managedStartup;
+            main.AttachWorkspace(_workspace);
+            StartupTiming.Mark("workspace-ready");
             CreateTray(_workspace, visible: !managedStartup);
-            if (managedStartup)
-            {
-                // Render real WPF windows without exposing writable UI before the transaction commits.
-                main.IsEnabled = false; main.Opacity = 0; main.ShowActivated = false;
-            }
-            if (!startup || managedStartup) main.Show();
-            _workspace.RestoreWindows();
+            await _workspace.RestoreStartupWindowsAsync();
             if (managedStartup)
             {
                 foreach (var window in _workspace.Windows.Values) { window.IsEnabled = false; window.Opacity = 0; }
                 await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+                StartupTiming.Mark("ui-rendered");
                 await handshake!.ReadyAsync(startupTimeout.Token);
                 _workspace.StartupPending = false;
-                main.IsEnabled = true; main.Opacity = 1;
                 foreach (var window in _workspace.Windows.Values) { window.IsEnabled = true; window.Opacity = 1; }
-                if (startup) main.Hide();
-                else { main.ShowActivated = true; main.Activate(); }
                 _tray!.Visible = true;
             }
+            presentation.Commit();
+            StartupTiming.Mark("interactive");
             _workspace.Sync.Start();
             _workspace.Updates.Start();
             if (!startup && _workspace.Notes.Count == 0 && _workspace.Store.Warnings.Count == 0) _workspace.CreateNote();

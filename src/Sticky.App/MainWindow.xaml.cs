@@ -9,21 +9,29 @@ namespace Sticky.App;
 
 public partial class MainWindow : Window
 {
-    private readonly StickyWorkspace _workspace;
-    private readonly MainViewModel _viewModel;
+    private StickyWorkspace _workspace = null!;
+    private MainViewModel _viewModel = null!;
 
-    public MainWindow(StickyWorkspace workspace)
+    private MainWindow()
     {
+        InitializeComponent();
+        Closed += (_, _) => { _viewModel?.Dispose(); if (_workspace?.Manager == this) _workspace.Manager = null; };
+    }
+
+    public static MainWindow CreateLoadingShell() => new();
+    public MainWindow(StickyWorkspace workspace) : this() => AttachWorkspace(workspace);
+
+    public void AttachWorkspace(StickyWorkspace workspace)
+    {
+        if (_workspace is not null) throw new InvalidOperationException("窗口已关联工作空间。");
         _workspace = workspace;
         workspace.Manager = this;
         _viewModel = new MainViewModel(workspace);
-        InitializeComponent();
         DataContext = _viewModel;
         CommandBindings.Add(new CommandBinding(ApplicationCommands.New, (_, _) => workspace.CreateNote(_viewModel.SelectedGroupId)));
         InputBindings.Add(new KeyBinding(ApplicationCommands.New, Key.N, ModifierKeys.Control));
         CommandBindings.Add(new CommandBinding(ApplicationCommands.Find, (_, _) => { SidebarSearchBox.Focus(); SidebarSearchBox.SelectAll(); }));
         InputBindings.Add(new KeyBinding(ApplicationCommands.Find, Key.F, ModifierKeys.Control));
-        Closed += (_, _) => { _viewModel.Dispose(); if (workspace.Manager == this) workspace.Manager = null; };
     }
 
     private void NewNote(object sender, RoutedEventArgs e) => _workspace.CreateNote(_viewModel.SelectedGroupId);
@@ -97,6 +105,7 @@ public partial class MainWindow : Window
     }
     private void OnClosing(object? sender, CancelEventArgs e)
     {
+        if (_workspace is null) { e.Cancel = true; return; }
         if (_workspace.IsExiting) return;
         e.Cancel = true;
         if (_workspace.SaveAllNotes()) Hide();

@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Icon="pack://application:,,,/Sticky;component/Assets/Sticky.ico"
         Title="Sticky · 本地便签" Width="1080" Height="740" MinWidth="820" MinHeight="540"
-        WindowStartupLocation="CenterScreen" Closing="OnClosing">
+        Background="#F8F8F6" WindowStartupLocation="CenterScreen" Closing="OnClosing">
   <Window.Resources>
     <BooleanToVisibilityConverter x:Key="BoolVisibility" />
     <Style x:Key="NavigationButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
@@ -94,5 +94,12 @@
       </StackPanel>
       <TextBlock Grid.Row="3" Text="{Binding Summary}" Foreground="{StaticResource Muted}" FontSize="11" Margin="0,12,0,0" />
     </Grid>
+    <Border x:Name="StartupOverlay" Grid.ColumnSpan="2" Panel.ZIndex="100" Background="#F8F8F6" Visibility="Collapsed">
+      <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+        <Image Source="{StaticResource StickyLogo}" Width="64" Height="64" Margin="0,0,0,18" />
+        <TextBlock Text="Sticky 正在启动…" FontSize="20" Foreground="#2F5346" HorizontalAlignment="Center" />
+        <ProgressBar IsIndeterminate="True" Width="180" Height="4" Margin="0,22,0,0" Foreground="#2F5346" />
+      </StackPanel>
+    </Border>
   </Grid>
 </Window>

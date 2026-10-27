@@ -104,6 +104,10 @@ internal static partial class Program
         Run("Launcher validates recovery snapshots before writes and recovers torn state", LauncherCorruptionAndSnapshots);
         Run("Launcher protects first startup and can bridge back to a verified legacy backup", LauncherBootstrapAndLegacyBridge);
         Run("Launcher late startup failure rolls back program without overwriting new edits", LauncherLateFailurePreservesNewEdits);
+        Run("Confirmed startup activates before observation and still handles late crashes", LauncherFastConfirmedStartup);
+        Run("Startup presentation renders an opaque first frame and hides logon startup", StartupFirstFrame);
+        Run("Parallel startup validation rejects every corrupted component with original exception types", ParallelStartupValidation);
+        Run("Background startup data binds on UI thread and batches restored layouts", ParallelWorkspaceStartup);
         Run("Launcher rejects incompatible schema, protocol, bad components and unreadable snapshots", LauncherInvalidCandidates);
         Run("History records lifecycle, groups, layout, rich text and immutable image references", HistoryRoundTrip);
         Run("History batches input sessions and distinguishes local and synced changes", HistoryBatchingAndSources);

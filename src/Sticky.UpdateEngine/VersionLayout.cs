@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using System.Runtime.ExceptionServices;
 using Sticky.App.Updates;
 
 namespace Sticky.UpdateEngine;
@@ -22,8 +23,9 @@ public static class VersionLayout
         if (!Regex.IsMatch(id, @"^[0-9]+\.[0-9]+\.[0-9]+-[a-f0-9]{32}$")) throw new InvalidDataException("无效的版本目录。");
         return DurableFiles.Child(root, "versions/" + id);
     }
-    public static string Validate(string directory, string? expectedVersion = null)
+    public static string Validate(string directory, string? expectedVersion = null, int maxParallelism = 4)
     {
+        if (maxParallelism < 1) throw new ArgumentOutOfRangeException(nameof(maxParallelism));
         UpdatePackage.RejectReparseAncestors(directory);
         using var doc = JsonDocument.Parse(File.ReadAllText(Path.Combine(directory, "release-manifest.json")));
         var m = doc.RootElement;
@@ -37,18 +39,34 @@ public static class VersionLayout
             throw new InvalidDataException("更新包与稳定启动器或数据格式不兼容，请保留 Data 并手动升级启动器。");
         var files = m.GetProperty("files");
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var entries = new List<(string Name, string Expected)>();
         foreach (var file in files.EnumerateObject())
         {
             if (!seen.Add(file.Name) || file.Name == "release-manifest.json"
                 || !UpdatePackage.ManagedEntries.Contains(file.Name.Split('/')[0], StringComparer.Ordinal)) throw new InvalidDataException("无效的程序文件清单。");
             var expected = file.Value.GetString();
-            if (expected is null || !Regex.IsMatch(expected, "^[a-f0-9]{64}$")
-                || DurableFiles.Hash(DurableFiles.Child(directory, file.Name)) != expected) throw new InvalidDataException("程序组件校验失败：" + file.Name);
+            if (expected is null || !Regex.IsMatch(expected, "^[a-f0-9]{64}$")) throw new InvalidDataException("程序组件校验失败：" + file.Name);
+            entries.Add((file.Name, expected));
         }
+        // Stream files through a bounded number of workers; never read entire bundles into memory.
+        // Keep manifest validation and the final decision on this thread before any child can start.
+        var hashes = new string[entries.Count];
+        try
+        {
+            Parallel.For(0, entries.Count, new ParallelOptions { MaxDegreeOfParallelism = Math.Min(Environment.ProcessorCount, maxParallelism) }, i =>
+            {
+                var entry = entries[i];
+                var actual = DurableFiles.Hash(DurableFiles.Child(directory, entry.Name));
+                if (actual != entry.Expected) throw new InvalidDataException("程序组件校验失败：" + entry.Name);
+                hashes[i] = actual;
+            });
+        }
+        catch (AggregateException ex) { ExceptionDispatchInfo.Capture(ex.Flatten().InnerExceptions[0]).Throw(); throw; }
+        var actualHashes = entries.Select((entry, i) => (entry.Name, Hash: hashes[i])).ToDictionary(x => x.Name, x => x.Hash, StringComparer.OrdinalIgnoreCase);
         foreach (var required in new[] { "Sticky.exe", Runtime, "portable.flag", "tools/git/cmd/git.exe", "tools/gcm/git-credential-manager.exe" })
             if (!seen.Contains(required)) throw new InvalidDataException("更新包缺少受校验的组件：" + required);
-        if (DurableFiles.Hash(Path.Combine(directory, "Sticky.exe")) != m.GetProperty("executableSha256").GetString()
-            || DurableFiles.Hash(DurableFiles.Child(directory, Runtime)) != m.GetProperty("runtimeSha256").GetString())
+        if (actualHashes["Sticky.exe"] != m.GetProperty("executableSha256").GetString()
+            || actualHashes[Runtime] != m.GetProperty("runtimeSha256").GetString())
             throw new InvalidDataException("启动器或运行程序校验失败。");
         return version;
     }

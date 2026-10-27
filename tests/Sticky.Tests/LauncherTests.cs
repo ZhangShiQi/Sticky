@@ -76,6 +76,7 @@ internal static partial class Program
             }
             session.ReadyAsync(timeout.Token).GetAwaiter().GetResult();
             File.WriteAllText(Path.Combine(root, "test-active.json"), JsonSerializer.Serialize(new { pid = process.Id, started = process.StartTime.ToUniversalTime().Ticks }));
+            if (behavior == "after-commit-crash") return 12;
             while (!File.Exists(Path.Combine(root, "test-stop"))) { timeout.Token.ThrowIfCancellationRequested(); Thread.Sleep(25); }
             return 0;
             }
