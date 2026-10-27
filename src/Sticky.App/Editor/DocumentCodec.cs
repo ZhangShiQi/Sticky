@@ -205,7 +205,7 @@ public static class DocumentCodec
     public static Image CreateImage(string id, double width, NoteStore store)
     {
         var image = new Image { Tag = id, Width = double.IsFinite(width) ? Math.Clamp(width, 60, 800) : 280,
-            MaxWidth = 800, Stretch = Stretch.Uniform, Margin = new Thickness(0, 8, 0, 8), ToolTip = "右键调整图片大小或移除图片" };
+            MaxWidth = 800, Stretch = Stretch.Uniform, Margin = new Thickness(0, 8, 0, 8), ToolTip = "双击放大查看；右键调整图片大小或移除图片" };
         try
         {
             using var stream = File.OpenRead(store.GetAssetPath(id));

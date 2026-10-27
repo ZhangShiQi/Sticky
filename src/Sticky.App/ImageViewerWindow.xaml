@@ -1,0 +1,36 @@
+<Window x:Class="Sticky.App.ImageViewerWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
+        Title="图片预览 · Sticky" Width="900" Height="650" MinWidth="520" MinHeight="320"
+        WindowStyle="None" AllowsTransparency="True" Background="Transparent" ResizeMode="CanResize"
+        ShowInTaskbar="False" WindowStartupLocation="CenterOwner" PreviewKeyDown="ViewerKeyDown" Deactivated="ViewerDeactivated">
+  <shell:WindowChrome.WindowChrome><shell:WindowChrome CaptionHeight="0" ResizeBorderThickness="5" GlassFrameThickness="0" CornerRadius="8" UseAeroCaptionButtons="False"/></shell:WindowChrome.WindowChrome>
+  <Window.Resources>
+    <Style x:Key="ViewerButton" TargetType="Button" BasedOn="{StaticResource ToolButton}">
+      <Setter Property="Foreground" Value="#EEEEEE"/><Setter Property="Background" Value="#303438"/>
+      <Setter Property="Padding" Value="10,5"/><Setter Property="Margin" Value="3,0"/>
+    </Style>
+  </Window.Resources>
+  <Border Background="#1D2023" BorderBrush="#555C62" BorderThickness="1" CornerRadius="8">
+    <Grid>
+      <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+      <Border Background="#282C30" CornerRadius="7,7,0,0" Padding="12,8" MouseLeftButtonDown="DragViewer">
+        <DockPanel>
+          <Button x:Name="CloseButton" DockPanel.Dock="Right" Content="×" FontSize="18" Style="{StaticResource ViewerButton}" Click="CloseClicked" ToolTip="关闭 · Esc" AutomationProperties.Name="关闭图片预览"/>
+          <Button x:Name="ZoomInButton" DockPanel.Dock="Right" Content="＋" Style="{StaticResource ViewerButton}" Click="ZoomInClicked" ToolTip="放大" AutomationProperties.Name="放大图片"/>
+          <TextBlock x:Name="ZoomLabel" DockPanel.Dock="Right" Width="53" Text="100%" Foreground="#EEEEEE" TextAlignment="Center" VerticalAlignment="Center" AutomationProperties.Name="图片缩放比例"/>
+          <Button x:Name="ZoomOutButton" DockPanel.Dock="Right" Content="−" Style="{StaticResource ViewerButton}" Click="ZoomOutClicked" ToolTip="缩小" AutomationProperties.Name="缩小图片"/>
+          <Button x:Name="ActualSizeButton" DockPanel.Dock="Right" Content="1:1" Style="{StaticResource ViewerButton}" Click="ActualSizeClicked" ToolTip="查看原始像素尺寸"/>
+          <Button x:Name="FitButton" DockPanel.Dock="Right" Content="适应窗口" Style="{StaticResource ViewerButton}" Click="FitClicked"/>
+          <TextBlock x:Name="ImageInfo" Foreground="#CCD1D5" VerticalAlignment="Center" Margin="0,0,12,0" TextTrimming="CharacterEllipsis"/>
+        </DockPanel>
+      </Border>
+      <ScrollViewer x:Name="Viewport" Grid.Row="1" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
+                    CanContentScroll="False" PanningMode="Both" Focusable="False" PreviewMouseWheel="ZoomWheel" SizeChanged="ViewportSizeChanged"
+                    PreviewMouseLeftButtonDown="BeginPan" PreviewMouseMove="Pan" PreviewMouseLeftButtonUp="EndPan" LostMouseCapture="PanCaptureLost">
+        <Grid Margin="16"><Image x:Name="PreviewImage" Stretch="Fill" HorizontalAlignment="Center" VerticalAlignment="Center" RenderOptions.BitmapScalingMode="HighQuality" AutomationProperties.Name="放大查看的图片"/></Grid>
+      </ScrollViewer>
+      <TextBlock Grid.Row="2" Text="滚轮缩放 · 放大后拖动查看 · Esc 或点击窗口外关闭" Foreground="#A9B0B7" FontSize="12" TextAlignment="Center" Margin="10,8" IsHitTestVisible="False"/>
+    </Grid>
+  </Border>
+</Window>

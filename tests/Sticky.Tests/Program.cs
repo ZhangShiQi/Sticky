@@ -50,6 +50,7 @@ internal static partial class Program
         Run("Backup-only notes and groups recover from the dedicated directory", BackupOnlyRecovery);
         Run("Invalid typography settings never replace saved preferences", InvalidTypography);
         Run("Missing image references survive subsequent saves", MissingImage);
+        Run("Image viewer opens on double-click, zooms without edits and closes on deactivation", ImageViewerInteraction);
         Run("ZIP backup round-trip and duplicate import preserve existing notes", ZipRoundTrip);
         Run("Unsafe ZIP paths are rejected before writing notes", UnsafeZip);
         Run("Device layout stays outside note content", DeviceRoundTrip);
