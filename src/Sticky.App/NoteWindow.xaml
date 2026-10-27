@@ -50,7 +50,7 @@
         <RichTextBox x:Name="Editor" Background="Transparent" BorderThickness="0" Padding="0" FontSize="16" Foreground="#ECECEC" CaretBrush="#ECECEC"
                      VerticalScrollBarVisibility="Hidden" HorizontalScrollBarVisibility="Disabled" AcceptsTab="True" IsReadOnly="True"
                      PreviewMouseLeftButtonDown="StartEditing" SelectionChanged="EditorSelectionChanged" TextChanged="ContentChanged"
-                     IsDocumentEnabled="True" SpellCheck.IsEnabled="False" AutomationProperties.Name="便签正文" />
+                     IsDocumentEnabled="True" IsInactiveSelectionHighlightEnabled="True" SpellCheck.IsEnabled="False" AutomationProperties.Name="便签正文" />
         <TextBlock x:Name="Placeholder" Text="点击这里，写下想法…" Foreground="#A5A5A5" Margin="3,2,0,0" IsHitTestVisible="False" />
       </Grid>
       <Border Grid.Row="2" x:Name="FormattingBar" BorderBrush="#18FFFFFF" BorderThickness="0,1,0,0" Padding="7,3"
@@ -63,6 +63,7 @@
           <Button Content="• ≡" Style="{StaticResource NoteButton}" Command="EditingCommands.ToggleBullets" CommandTarget="{Binding ElementName=Editor}" ToolTip="项目列表" />
           <Button Content="1 ≡" Style="{StaticResource NoteButton}" Command="EditingCommands.ToggleNumbering" CommandTarget="{Binding ElementName=Editor}" ToolTip="编号列表" />
           <Button Content="▧" FontSize="21" Style="{StaticResource NoteButton}" Click="InsertImage" ToolTip="插入图片，也可粘贴截图或拖入图片" AutomationProperties.Name="插入图片" />
+          <Button x:Name="AiButton" Content="AI" FontSize="12" Style="{StaticResource NoteButton}" Click="AiPolishClicked" ToolTip="选择 AI 功能，处理选中文字" AutomationProperties.Name="AI 功能菜单"/>
         </StackPanel>
       </Border>
       <!-- Metadata is edited through the menu and never consumes document space. -->

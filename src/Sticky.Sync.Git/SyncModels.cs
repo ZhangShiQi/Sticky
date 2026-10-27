@@ -19,6 +19,7 @@ public sealed class SyncSnapshot
 {
     public Dictionary<Guid, Note> Notes { get; set; } = [];
     public List<NoteGroup> Groups { get; set; } = [];
+    public AiCatalog? Ai { get; set; }
     [JsonIgnore] public Dictionary<string, byte[]> Assets { get; } = new(StringComparer.Ordinal);
 
     public SyncSnapshot Clone()

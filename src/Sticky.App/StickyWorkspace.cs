@@ -5,6 +5,7 @@ using Sticky.Sync.Git;
 using Sticky.App.Synchronization;
 using Sticky.App.ViewModels;
 using Sticky.App.Updates;
+using Sticky.App.AI;
 using WindowState = Sticky.Core.WindowState;
 
 namespace Sticky.App;
@@ -27,10 +28,14 @@ public sealed class StickyWorkspace
     public SettingsWindow? Settings { get; private set; }
     public StartupRegistration Startup { get; }
     public UpdateCoordinator Updates { get; }
+    public AiSettingsStore AiSettings { get; }
+    public AiClient AiClient { get; }
 
-    public StickyWorkspace(string root, StartupRegistration? startup = null)
+    public StickyWorkspace(string root, StartupRegistration? startup = null, AiClient? aiClient = null)
     {
         Store = new NoteStore(root);
+        AiSettings = new AiSettingsStore(Store.Root);
+        AiClient = aiClient ?? new AiClient();
         Startup = startup ?? new StartupRegistration(LauncherContext.Root is string launcherRoot ? System.IO.Path.Combine(launcherRoot, "Sticky.exe")
             : Environment.ProcessPath ?? System.IO.Path.Combine(AppContext.BaseDirectory, "Sticky.exe"), LauncherContext.Root ?? AppContext.BaseDirectory, Store.Root);
         Notes = Store.LoadNotes();
@@ -45,6 +50,7 @@ public sealed class StickyWorkspace
         try { Store.History.Reconcile(); }
         catch (Exception ex) { Store.Warnings.Add("历史暂不可读取，现有便签已保留：" + ex.Message); }
         Sync = new SyncCoordinator(this);
+        AiSettings.Changed += NotifyChanged;
         Updates = new UpdateCoordinator(this);
     }
 
@@ -138,10 +144,12 @@ public sealed class StickyWorkspace
         catch (Exception ex) { ShowError("无法启动更新，请关闭自动更新后重试退出", ex); return false; }
         IsExiting = true;
         Sync.Dispose();
+        AiSettings.Changed -= NotifyChanged;
         Updates.Dispose();
         foreach (var window in Windows.Values.ToArray()) window.Close();
         Search?.Close();
         Settings?.Close();
+        AiClient.Dispose();
         History?.Close();
         Manager?.Close();
         return true;
@@ -272,7 +280,7 @@ public sealed class StickyWorkspace
         foreach (var file in System.IO.Directory.EnumerateFiles(Store.NotesDirectory, "*.json"))
             if (Guid.TryParse(System.IO.Path.GetFileNameWithoutExtension(file), out var id) && !Notes.Any(n => n.Id == id))
                 throw new System.IO.IOException("存在尚未读取的本地便签文件，同步已暂停以保留原始数据。请先处理启动时的数据恢复提示。");
-        return new SyncSnapshot { Notes = Notes.ToDictionary(n => n.Id, n => n), Groups = Groups }.Clone();
+        return new SyncSnapshot { Notes = Notes.ToDictionary(n => n.Id, n => n), Groups = Groups, Ai = AiSettings.ExportShared() }.Clone();
     }
 
     public MergeResult ApplySyncedSnapshot(SyncSnapshot captured, SyncSnapshot incoming, CancellationToken token = default)
@@ -305,6 +313,7 @@ public sealed class StickyWorkspace
                 if (existing.DeletedAt is not null) window.Close();
             }
         }
+        AiSettings.ApplyShared(final.Ai);
         NotifyChanged();
         return reconciled;
     }

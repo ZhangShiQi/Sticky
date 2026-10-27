@@ -139,5 +139,6 @@
         <TextBlock Text="在时间轴中点击「导出历史」可保存便签与完整历史备份。恢复到新工作空间时，退出 Sticky，将备份完整解压到空的 Data 目录。普通便签导入不会替换当前时间轴。" TextWrapping="Wrap" Foreground="{StaticResource Muted}" LineHeight="23"/>
       </StackPanel>
     </TabItem>
+    <TabItem Header="AI 接入"><ContentControl x:Name="AiHost" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"/></TabItem>
   </TabControl>
 </Window>

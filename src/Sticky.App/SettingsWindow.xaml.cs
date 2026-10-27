@@ -6,10 +6,11 @@ using Microsoft.Win32;
 using Sticky.App.Synchronization;
 using Sticky.Storage;
 using Sticky.Core;
+using Sticky.App.AI;
 
 namespace Sticky.App;
 
-public enum SettingsSection { Sync, Data, Typography, Application, Updates, History }
+public enum SettingsSection { Sync, Data, Typography, Application, Updates, History, AI }
 
 public partial class SettingsWindow : Window
 {
@@ -28,6 +29,7 @@ public partial class SettingsWindow : Window
         InitializeComponent();
         DataContext = this;
         SyncHost.Content = new SyncSettingsView(workspace);
+        AiHost.Content = new AiSettingsView(workspace);
         LoadTypographyFields(workspace.EditorPreferences);
         RefreshStartup();
         UpdatesPanel.DataContext = workspace.Updates;

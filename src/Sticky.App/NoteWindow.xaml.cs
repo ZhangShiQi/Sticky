@@ -205,7 +205,7 @@ public partial class NoteWindow : Window
         WordCount.Text = $"{text.Length} 字";
     }
 
-    public bool SaveNow(bool showError = true)
+    public bool SaveNow(bool showError = true, string? historyReason = null)
     {
         _saveTimer.Stop();
         if (!_dirty || _loading) return true;
@@ -219,7 +219,7 @@ public partial class NoteWindow : Window
             _note.Title = TitleBox.Text;
             _note.Color = _color;
             _note.ModifiedAt = DateTimeOffset.UtcNow;
-            using (var history = _workspace.Store.History.WithContext("local", _historyBatch)) _workspace.Store.Save(_note);
+            using (var history = _workspace.Store.History.WithContext("local", _historyBatch, historyReason)) _workspace.Store.Save(_note);
             _dirty = false;
             SaveStatus.Text = "已保存 · " + DateTime.Now.ToString("HH:mm:ss");
             SaveStatus.Foreground = Brush("#526B4C");
@@ -358,6 +358,7 @@ public partial class NoteWindow : Window
             Add("搜索便签    Ctrl+F", _workspace.ShowSearch);
             Add("历史版本与重放…", () => _workspace.ShowHistory(_note.Id));
             Add("设置…", _workspace.ShowSettings);
+            Add("AI 接入设置…", () => _workspace.ShowSettings(SettingsSection.AI));
             Add("立即保存    Ctrl+S", () => SaveNow());
             Add("移入回收站", () => _workspace.Delete(_note));
             Add("关闭窗口（保留便签）", Close);

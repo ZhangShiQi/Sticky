@@ -115,6 +115,18 @@ internal static partial class Program
         Run("History unified timeline supports native multiselection and selected read-only playback", HistoryMultiSelectionUi);
         Run("History archives preserve timelines and reconcile external changes without overwriting data", HistoryBackupAndExternalChanges);
         Run("History captures incoming sync locally and rejects incomplete restore before changing data", HistorySyncAndInvalidRestore);
+        Run("AI configuration validates endpoints and encrypts credentials outside backups", AiConfigurationAndStorage);
+        Run("AI requests use only selected text and the configured model", AiRequestContract);
+        Run("AI thinking control defaults off and custom prompts remain separate from selected text", AiThinkingAndActions);
+        Run("AI legacy credentials migrate locally while shared drafts retain concurrent changes", AiMigrationAndDraftConflicts);
+        Run("AI custom action editor persists icons and controls the note menu", AiCustomActionUi);
+        Run("AI Git sync shares actions without credentials and retains offline conflicts", () => GitTest("git-ai-catalog", GitIntegrationTests.AiCatalogSync));
+        Run("AI Git sync rejects malformed shared settings before changing local data", () => GitTest("git-ai-corrupt", GitIntegrationTests.AiRejectInvalidRemote));
+        Run("AI failures, redirects, truncation, cancellation and timeout preserve original content", AiRequestFailures);
+        Run("AI selection replacement preserves neighbors, images, undo and rejects stale documents", AiSelectionSafety);
+        Run("AI paragraph and list selections preserve boundaries, numbering and explicit sizes", AiParagraphAndListSelection);
+        Run("AI settings UI retains keys only for the same endpoint", AiSettingsUi);
+        Run("AI note toolbar previews before replacement and appends an undoable history change", AiNotePreviewAndHistory);
         if (GitIntegrationTests.ToolBaseDirectory is not null)
             Run("Bundled native Git and GCM run with no system Git or dotnet on PATH", () => GitTest("portable-tools", GitIntegrationTests.PortableTools));
         Console.WriteLine($"\n{_passed} passed; {_failed} failed. Artifacts: {_root}");

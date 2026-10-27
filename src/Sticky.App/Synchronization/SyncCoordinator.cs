@@ -95,7 +95,7 @@ public sealed class SyncCoordinator : INotifyPropertyChanged, IDisposable
             SyncJson.WriteAtomic(_settingsPath, SyncJson.Bytes(Settings), _workspace.Store.Root);
             _failures = 0; _nextAttempt = DateTimeOffset.UtcNow.AddSeconds(60);
             var count = result.ConflictCount + uiConflicts;
-            var detail = count > 0 ? $"已保留 {count} 个冲突副本，可在便签管理或回收站中查看。" : "便签、分组和图片已同步。下次后台检查约在一分钟后。";
+            var detail = count > 0 ? $"已保留 {count} 个冲突副本，可在便签管理、回收站或 AI 设置中查看。" : "便签、分组、图片和共享 AI 配置已同步。下次后台检查约在一分钟后。";
             if (_changeVersion != publishedVersion)
             {
                 _nextAttempt = DateTimeOffset.UtcNow.AddSeconds(15);

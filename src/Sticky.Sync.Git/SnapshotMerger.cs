@@ -11,6 +11,8 @@ public static class SnapshotMerger
         baseline = baseline.Clone(); local = local.Clone(); remote = remote.Clone();
         var result = new SyncSnapshot();
         var conflicts = 0;
+        var ai = AiCatalogMerger.Merge(baseline.Ai, local.Ai, remote.Ai);
+        result.Ai = ai.Catalog; conflicts += ai.Conflicts;
         foreach (var id in baseline.Groups.Select(g => g.Id).Union(local.Groups.Select(g => g.Id)).Union(remote.Groups.Select(g => g.Id)))
         {
             var b = baseline.Groups.FirstOrDefault(g => g.Id == id);

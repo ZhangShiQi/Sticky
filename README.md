@@ -4,7 +4,7 @@
 
 ## 使用 Windows 便携版
 
-从 [GitHub Releases](https://github.com/ZhangShiQi/Sticky/releases) 获取已发布的 Windows x64 便携包，或自行打包生成 `dist/Sticky-0.5.0-win-x64-portable.zip`，完整解压后双击根目录的 `Sticky.exe`。目标电脑不需要安装 .NET SDK、.NET Runtime 或 Git。请保留随包的 `tools` 文件夹，包含 WPF 程序、Git 和 Git Credential Manager。源码仓库不包含发布包；从源码获取后，可按下文运行打包脚本生成。当前版本为 0.5.0，发行包与更新记录见 Releases。
+从 [GitHub Releases](https://github.com/ZhangShiQi/Sticky/releases) 获取已发布的 Windows x64 便携包，或自行打包生成 `dist/Sticky-0.6.0-win-x64-portable.zip`，完整解压后双击根目录的 `Sticky.exe`。目标电脑不需要安装 .NET SDK、.NET Runtime 或 Git。请保留随包的 `tools` 文件夹，包含 WPF 程序、Git 和 Git Credential Manager。源码仓库不包含发布包；从源码获取后，可按下文运行打包脚本生成。当前版本为 0.6.0，发行包与更新记录见 Releases。
 
 便携版自动将数据存到 exe 旁边的 `Data`，不依赖当前工作目录，也不读取开发预览 `.local-demo` 中的便签。发布包是空白工作空间，不包含开发机上的便签、仓库配置、Git 历史或凭据。原有便签可先导出 ZIP，再在便携版导入。
 
@@ -21,6 +21,10 @@
 ```
 
 脚本校验官方 Git/GCM 下载包的 SHA256，生成自包含 exe、依赖组件、使用说明、许可证、版本清单、ZIP 和 ZIP 校验文件。开发机打包需要 .NET 10 SDK，目标电脑运行不需要。发布配置为 `src/Sticky.App/Properties/PublishProfiles/Portable.pubxml`，不裁剪 WPF 程序。
+
+## AI 接入与自定义功能
+
+在「设置 → AI 接入」配置 OpenAI 兼容 API 地址、模型和本机密钥，思考模式默认关闭，支持 DeepSeek 显式关闭思考和连接测试。「自定义功能」可编辑按钮名称、提示词、预设 SVG 图标及启用状态。选中文字后点击便签工具栏「AI」，从列表选择润色、翻译、提炼要点等自己配置的功能；预览并确认后仅替换原选区，支持撤销与本地历史记录。连接参数、思考开关、提示词和图标随 GitHub 同步，并发冲突保留双方；API 密钥按 Windows 当前用户加密，只留在本机，新设备需填写自己的密钥。断网时仍可正常编辑保存。详见 [AI 接入与自定义功能](docs/ai.md)。
 
 ## 版本与自动更新
 
@@ -160,7 +164,7 @@ JSON 是正文的唯一事实来源。图片以内容哈希去重；使用相对
 
 本地变更约 15 秒后批量同步，空闲时约每分钟检查一次其他设备的改动。失败后按 30、60、120、240、300 秒退避重试；可以手动立即重试或取消。网络操作在后台执行，断网、权限不足、登录失效或仓库不可用均不影响本地自动保存。配置窗口显示具体错误和重试状态。停用同步只停用后台检查，不删除本地或远端数据。
 
-同步数据在目标分支的 `sticky-v1/` 下，包括便签 JSON、分组、图片、回收站中的删除标记。首次推送会创建配置的分支，不自动创建 GitHub 仓库。该分支既有的其他文件会保留。窗口位置、设备设置、同步配置、凭据、`.bak` 和损坏文件不会上传；本地 Git 缓存与共同版本放在 `device/sync/<目标哈希>/`，切换仓库或分支会使用独立缓存。
+便签同步数据在目标分支的 `sticky-v1/` 下，包括便签 JSON、分组、图片、回收站中的删除标记；共享 AI 连接参数与自定义功能独立存放在 `sticky-ai-v1/settings.json`，并发修改保留双方。首次推送会创建配置的分支，不自动创建 GitHub 仓库。该分支既有的其他文件会保留。窗口位置、设备设置、同步配置、API 密钥等凭据、`.bak` 和损坏文件不会上传；本地 Git 缓存与共同版本放在 `device/sync/<目标哈希>/`，切换仓库或分支会使用独立缓存。
 
 同步规则：
 

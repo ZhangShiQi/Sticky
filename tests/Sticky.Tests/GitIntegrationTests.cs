@@ -3,6 +3,7 @@ using System.Text;
 using Sticky.Core;
 using Sticky.Storage;
 using Sticky.Sync.Git;
+using Sticky.App.AI;
 
 internal static class GitIntegrationTests
 {
@@ -21,7 +22,7 @@ internal static class GitIntegrationTests
             Store = new NoteStore(path); Engine = new GitSyncEngine(path, allowLocalRemotes: true, gitProcess: CreateGitProcess());
             Settings = new SyncSettings { Enabled = true, RemoteUrl = remote };
         }
-        public SyncSnapshot Capture() => new() { Notes = Store.LoadNotes().ToDictionary(n => n.Id), Groups = Store.LoadGroups() };
+        public SyncSnapshot Capture() => new() { Notes = Store.LoadNotes().ToDictionary(n => n.Id), Groups = Store.LoadGroups(), Ai = Store.LoadAiCatalog() };
         public Task<SyncResult> Sync(CancellationToken token = default) => Engine.SyncAsync(Settings, Capture(), async (captured, incoming, ct) =>
         {
             if (BeforeApply is not null) incoming = await BeforeApply(captured, incoming, ct);
@@ -29,6 +30,7 @@ internal static class GitIntegrationTests
             foreach (var bytes in final.Assets.Values) Store.AddImage(bytes);
             Store.SaveGroups(final.Groups);
             foreach (var note in final.Notes.Values.OrderBy(n => File.Exists(Path.Combine(Store.NotesDirectory, n.Id + ".json")))) Store.Save(note);
+            if (final.Ai is not null) Store.SaveAiCatalog(final.Ai);
             return final;
         }, token);
         public Note Edit(Guid id, string text, bool deleted = false)
@@ -194,6 +196,64 @@ internal static class GitIntegrationTests
         await f.A.Sync(); await f.B.Sync(); await f.A.Sync();
         Check(f.A.Store.LoadGroups().Count == 1 && f.A.Store.LoadNotes().Count == 1, "Equal group creation caused duplicates or content conflicts.");
         Check(f.A.Store.LoadNotes().Single().GroupId == f.A.Store.LoadGroups().Single().Id, "Group membership was not remapped.");
+    }
+
+    public static async Task AiCatalogSync(string root)
+    {
+        var f = await Fixture.Create(root); await f.Seed();
+        var a = new AiSettingsStore(f.A.Store.Root); var b = new AiSettingsStore(f.B.Store.Root);
+        a.Save(new AiConfiguration { Enabled = true, BaseUrl = "https://api.deepseek.com/v1", Model = "test-model", ApiKey = "DEVICE-A-SECRET" });
+        var translate = new AiAction { Name = "翻译", Prompt = "翻译成英文。", Icon = "translate" };
+        a.SaveAction(translate, a.EditingCatalog()); await f.A.Sync(); await f.B.Sync();
+        Check(b.Load().Enabled && !b.Load().CanRun && b.Load().ApiKey.Length == 0 && !b.Load().ThinkingEnabled
+            && b.EditingCatalog().Actions.Any(x => x.Id == translate.Id && x.Icon == "translate"), "A new device did not receive actions, thinking settings or the missing-local-key state.");
+        b.Save(new AiConfiguration { Enabled = true, BaseUrl = "https://api.deepseek.com/v1", Model = "test-model", ApiKey = "DEVICE-B-SECRET" });
+        var tree = await Fixture.Git(root, ["--git-dir", f.Remote, "ls-tree", "-r", "--name-only", "refs/heads/sticky-data"]);
+        var shared = await Fixture.Git(root, ["--git-dir", f.Remote, "show", "refs/heads/sticky-data:sticky-ai-v1/settings.json"]);
+        Check(tree.Contains("sticky-ai-v1/settings.json") && !tree.Contains("device/") && !shared.Contains("SECRET") && !shared.Contains("ProtectedKey", StringComparison.OrdinalIgnoreCase), "Git exported a local credential or placed AI configuration in an old-client namespace.");
+        var ca = a.EditingCatalog(); var cb = b.EditingCatalog();
+        var left = ca.Actions.Single(x => x.Id == translate.Id); left.Prompt = "A：翻译成英文，语气自然。";
+        var right = cb.Actions.Single(x => x.Id == translate.Id); right.Prompt = "B：翻译成英文，语气正式。";
+        // Load independent baselines before changing the records.
+        a.SaveAction(left, a.EditingCatalog()); b.SaveAction(right, b.EditingCatalog());
+        var hidden = f.Remote + ".offline"; Directory.Move(f.Remote, hidden);
+        try { try { await f.A.Sync(); throw new InvalidOperationException("Offline sync unexpectedly succeeded."); } catch (IOException) { } }
+        finally { Directory.Move(hidden, f.Remote); }
+        a = new AiSettingsStore(f.A.Store.Root);
+        Check(a.EditingCatalog().Actions.Any(x => x.Prompt == left.Prompt), "Offline restart lost a custom prompt.");
+        await f.A.Sync(); var conflict = await f.B.Sync(); await f.A.Sync(); await f.B.Sync();
+        var merged = a.EditingCatalog();
+        Check(conflict.ConflictCount > 0 && merged.Actions.Count(x => x.Prompt == left.Prompt || x.Prompt == right.Prompt) == 2
+            && SyncJson.Equal(merged, b.EditingCatalog()), "Two-device action conflicts lost a prompt or did not converge.");
+        Check(!(await f.A.Sync()).Uploaded && a.EditingCatalog().Actions.Count == merged.Actions.Count, "An unchanged AI conflict created another commit or duplicate action.");
+        Check(a.Load().ApiKey == "DEVICE-A-SECRET" && b.Load().ApiKey == "DEVICE-B-SECRET", "Shared sync replaced a device's private credential.");
+        var basisA = a.EditingCatalog(); var basisB = b.EditingCatalog();
+        var removed = SyncJson.Read<AiAction>(SyncJson.Bytes(basisA.Actions.Single(x => x.Id == translate.Id))); removed.DeletedAt = DateTimeOffset.UtcNow;
+        var edited = SyncJson.Read<AiAction>(SyncJson.Bytes(basisB.Actions.Single(x => x.Id == translate.Id))); edited.Prompt = "删除冲突中保留的编辑";
+        a.SaveAction(removed, basisA); b.SaveAction(edited, basisB); await f.A.Sync(); await f.B.Sync(); await f.A.Sync();
+        Check(a.EditingCatalog().Actions.Any(x => x.Id == translate.Id && x.DeletedAt is not null)
+            && a.EditingCatalog().Actions.Any(x => x.Prompt == edited.Prompt && x.DeletedAt is null), "Delete-versus-edit discarded an active prompt or deletion tombstone.");
+        var configA = a.Load(); var configB = b.Load();
+        a.Save(new AiConfiguration { Enabled = true, BaseUrl = configA.BaseUrl, Model = "model-A", ApiKey = configA.ApiKey, ThinkingEnabled = true });
+        b.Save(new AiConfiguration { Enabled = true, BaseUrl = configB.BaseUrl, Model = "model-B", ApiKey = configB.ApiKey });
+        await f.A.Sync(); await f.B.Sync(); await f.A.Sync();
+        Check(a.EditingCatalog().Connections.Any(x => x.Model == "model-A" && x.ThinkingEnabled)
+            && a.EditingCatalog().Connections.Any(x => x.Model == "model-B" && !x.ThinkingEnabled), "Connection conflicts lost a model or thinking preference.");
+        b.ForgetKey(b.Load()); Check(!b.Load().CanRun && a.Load().CanRun, "Removing one local key disabled another device.");
+    }
+
+    public static async Task AiRejectInvalidRemote(string root)
+    {
+        var f = await Fixture.Create(root); await f.Seed();
+        var settings = new AiSettingsStore(f.A.Store.Root); settings.SaveAction(AiAction.Polish(), settings.EditingCatalog()); await f.A.Sync();
+        var before = File.ReadAllBytes(Path.Combine(f.A.Store.Root, "ai.json"));
+        var clone = Path.Combine(root, "malformed-ai"); Directory.CreateDirectory(clone);
+        await Fixture.Git(clone, ["clone", "--quiet", "--branch", "sticky-data", f.Remote, "."]);
+        File.WriteAllText(Path.Combine(clone, "sticky-ai-v1", "settings.json"), "{\"schemaVersion\":1,\"connections\":[],\"actions\":[],\"apiKey\":\"DO-NOT-IMPORT\"}");
+        await Fixture.Git(clone, ["add", "."]); await Fixture.Git(clone, ["commit", "-m", "Invalid AI configuration"]); await Fixture.Git(clone, ["push", "origin", "HEAD:refs/heads/sticky-data"]);
+        try { await f.A.Sync(); throw new InvalidOperationException("Invalid AI configuration was accepted."); } catch (System.Text.Json.JsonException) { }
+        Check(File.ReadAllBytes(Path.Combine(f.A.Store.Root, "ai.json")).AsSpan().SequenceEqual(before)
+            && f.A.Store.LoadNotes().Single().PlainText == "共同版本", "Malformed remote settings changed healthy notes or AI configuration.");
     }
 
     public static void ConfigValidation()

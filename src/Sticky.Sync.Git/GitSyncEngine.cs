@@ -8,6 +8,7 @@ namespace Sticky.Sync.Git;
 public sealed class GitSyncEngine
 {
     private const string Prefix = "sticky-v1/";
+    private const string AiFile = "sticky-ai-v1/settings.json";
     private const int MaxFileBytes = 20 * 1024 * 1024;
     private const int MaxTotalBytes = 256 * 1024 * 1024;
     private readonly string _dataRoot;
@@ -123,7 +124,7 @@ public sealed class GitSyncEngine
 
     private async Task<Dictionary<string, byte[]>> ReadFiles(string repo, string revision, CancellationToken token)
     {
-        var tree = await Require(repo, ["ls-tree", "-rz", "--full-tree", revision, "--", Prefix], token);
+        var tree = await Require(repo, ["ls-tree", "-rz", "--full-tree", revision, "--", Prefix, "sticky-ai-v1/"], token);
         var entries = new List<(string Path, string Hash)>();
         foreach (var entry in Encoding.UTF8.GetString(tree.Bytes).Split('\0', StringSplitOptions.RemoveEmptyEntries))
         {
@@ -160,7 +161,7 @@ public sealed class GitSyncEngine
 
     private static void ValidatePath(string path)
     {
-        if (path is Prefix + "manifest.json" or Prefix + "groups.json") return;
+        if (path is Prefix + "manifest.json" or Prefix + "groups.json" or AiFile) return;
         if (Regex.IsMatch(path, @"^sticky-v1/notes/[a-fA-F0-9-]{36}\.json$") || Regex.IsMatch(path, @"^sticky-v1/assets/[a-f0-9]{64}\.png$")) return;
         throw new InvalidDataException("远端同步目录包含不支持的文件：" + path);
     }
@@ -178,7 +179,8 @@ public sealed class GitSyncEngine
         }
         foreach (var (path, bytes) in files)
         {
-            if (path == Prefix + "groups.json") snapshot.Groups = NoteStore.ParseGroups(bytes);
+            if (path == AiFile) snapshot.Ai = NoteStore.ParseAiCatalog(bytes);
+            else if (path == Prefix + "groups.json") snapshot.Groups = NoteStore.ParseGroups(bytes);
             else if (path.StartsWith(Prefix + "notes/", StringComparison.Ordinal))
             {
                 if (!Guid.TryParse(Path.GetFileNameWithoutExtension(path), out var id)) throw new InvalidDataException("远端便签标识无效。");
@@ -198,6 +200,7 @@ public sealed class GitSyncEngine
     public static void ValidateSnapshot(SyncSnapshot snapshot, bool checkAssets = true)
     {
         if (snapshot.Notes is null || snapshot.Groups is null) throw new InvalidDataException("同步快照无效。");
+        if (snapshot.Ai is not null) _ = NoteStore.ParseAiCatalog(SyncJson.Bytes(snapshot.Ai));
         _ = NoteStore.ParseGroups(SyncJson.Bytes(new GroupCatalog { Groups = snapshot.Groups }));
         foreach (var (id, note) in snapshot.Notes)
         {
@@ -232,6 +235,7 @@ public sealed class GitSyncEngine
             [Prefix + "groups.json"] = SyncJson.Bytes(new GroupCatalog { Groups = snapshot.Groups.OrderBy(g => g.Id).ToList() })
         };
         foreach (var note in snapshot.Notes.Values) files[Prefix + "notes/" + note.Id + ".json"] = SyncJson.Bytes(note);
+        if (snapshot.Ai is not null) files[AiFile] = SyncJson.Bytes(snapshot.Ai);
         foreach (var id in snapshot.Notes.Values.SelectMany(n => ImageIds(n.Blocks)).Distinct()) files[Prefix + "assets/" + id] = snapshot.Assets[id];
         if (files.Count > 10000 || files.Values.Any(b => b.Length > MaxFileBytes) || files.Values.Sum(b => (long)b.Length) > MaxTotalBytes)
             throw new InvalidDataException("便签数据超过同步大小限制（单文件 20 MB，总计 256 MB）。");
