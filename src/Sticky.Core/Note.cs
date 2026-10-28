@@ -92,3 +92,9 @@ public sealed class EditorPreferences
     public bool AutoHideHeader { get; set; }
     public bool ShowHeaderOnHover { get; set; } = true;
 }
+
+public sealed class ManagerPreferences
+{
+    public int SchemaVersion { get; set; } = 1;
+    public string ViewMode { get; set; } = "preview";
+}

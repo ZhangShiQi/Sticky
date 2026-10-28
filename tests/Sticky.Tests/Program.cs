@@ -80,6 +80,8 @@ internal static partial class Program
         Run("Portable data stays beside the executable regardless of working directory", PortableDataPaths);
         Run("Bundled tool resolution handles spaces and apostrophes", BundledToolPaths);
         Run("Workspace navigation submits search on Enter and reuses categorized settings", SidebarAndSettings);
+        Run("Manager view toggle persists and compact title actions preserve filtering and restoration", ManagerViews);
+        Run("Manager virtualizes 5000 notes and reuses cards with bounded lazy text", ManagerScale);
         Run("Startup settings toggle registration and recover from access failures", StartupSettings);
         Run("Startup command preserves quoted paths, workspace and dotnet host", StartupCommands);
         Run("Behavior preferences persist while legacy and new notes default to visible title bars", InteractionPreferences);

@@ -40,6 +40,11 @@ public partial class MainWindow : Window
     private void ShowTrash(object sender, RoutedEventArgs e) => _viewModel.ShowDeleted = true;
     private void OpenSettings(object sender, RoutedEventArgs e) => _workspace.ShowSettings();
     private void OpenHistory(object sender, RoutedEventArgs e) => _workspace.ShowHistory();
+    private void ToggleView(object sender, RoutedEventArgs e)
+    {
+        try { _viewModel.ToggleView(); }
+        catch (Exception ex) { StickyWorkspace.ShowError("无法保存便签视图设置", ex); }
+    }
     private void SidebarSearchKeyDown(object sender, KeyEventArgs e)
     {
         if (e.Key != Key.Enter) return;
@@ -73,12 +78,13 @@ public partial class MainWindow : Window
     {
         if (sender is not Button { DataContext: NoteCard card } button) return;
         var menu = NoteMenus.MoveMenu(_workspace, card.Note);
-        menu.PlacementTarget = button; menu.IsOpen = true;
+        button.ContextMenu = menu; menu.PlacementTarget = button; menu.IsOpen = true;
     }
     private void CardMenu(object sender, RoutedEventArgs e)
     {
         if (sender is not Button { DataContext: NoteCard card } button) return;
         var menu = new ContextMenu { PlacementTarget = button };
+        button.ContextMenu = menu;
         var history = new MenuItem { Header = "历史版本与重放…" };
         history.Click += (_, _) => _workspace.ShowHistory(card.Note.Id);
         menu.Items.Add(history);
@@ -89,6 +95,23 @@ public partial class MainWindow : Window
             menu.Items.Add(delete);
         }
         menu.IsOpen = true;
+    }
+    private void CardContextChanged(object sender, DependencyPropertyChangedEventArgs e)
+    {
+        if (sender is FrameworkElement { ContextMenu: { IsOpen: true } menu }) menu.IsOpen = false;
+    }
+    private void TitleCardMenuOpened(object sender, RoutedEventArgs e)
+    {
+        if (sender is not ContextMenu menu || menu.PlacementTarget is not FrameworkElement { DataContext: NoteCard card }) return;
+        menu.Items.Clear();
+        var open = new MenuItem { Header = card.Note.DeletedAt is null ? "打开便签" : "恢复便签" };
+        open.Click += (_, _) => { if (card.Note.DeletedAt is null) _workspace.OpenNote(card.Note); else _workspace.Restore(card.Note); }; menu.Items.Add(open);
+        if (card.Note.DeletedAt is null)
+        {
+            var move = new MenuItem { Header = "移动到分组" }; NoteMenus.FillMoveItems(move.Items, _workspace, card.Note); menu.Items.Add(move);
+            var delete = new MenuItem { Header = "移入回收站" }; delete.Click += (_, _) => _workspace.Delete(card.Note); menu.Items.Add(delete);
+        }
+        var history = new MenuItem { Header = "历史版本与重放…" }; history.Click += (_, _) => _workspace.ShowHistory(card.Note.Id); menu.Items.Add(history);
     }
     private void OpenCard(object sender, RoutedEventArgs e)
     {
