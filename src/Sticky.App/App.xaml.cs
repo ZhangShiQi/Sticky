@@ -89,12 +89,26 @@ public partial class App : Application
                 foreach (var window in _workspace.Windows.Values) { window.IsEnabled = false; window.Opacity = 0; }
                 await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
                 StartupTiming.Mark("ui-rendered");
+                if (LauncherContext.Root is string healthRoot && File.Exists(new LauncherStore(healthRoot).PendingFile))
+                    await Sticky.Capture.CaptureHealth.CheckAsync(startupTimeout.Token);
                 await handshake!.ReadyAsync(startupTimeout.Token);
                 _workspace.StartupPending = false;
                 foreach (var window in _workspace.Windows.Values) { window.IsEnabled = true; window.Opacity = 1; }
                 _tray!.Visible = true;
             }
             presentation.Commit();
+            Sticky.Capture.CaptureEnvironment.OpenSettings = _workspace.ShowCaptureSettings;
+            Sticky.Capture.CaptureEnvironment.SharedTextSettings = () =>
+            {
+                var selectedId = _workspace.Capture.Preferences.StickyTextConnectionId;
+                if (selectedId is null || !_workspace.AiSettings.EditingCatalog().Connections.Any(c => c.Id == selectedId && c.DeletedAt is null))
+                    throw new Sticky.Capture.Services.AiException("所选便签 AI 连接已不存在，请在截图设置中重新选择。");
+                var configuration = _workspace.AiSettings.Load(_workspace.Capture.Preferences.StickyTextConnectionId);
+                if (!configuration.Enabled) throw new Sticky.Capture.Services.AiException("请先在 AI 接入中启用便签 AI 连接。");
+                return new Sticky.Capture.Services.AiSettings { Endpoint = configuration.CompletionUri().AbsoluteUri,
+                    Model = configuration.Model, ApiKey = configuration.ApiKey };
+            };
+            _workspace.Capture.Start();
             StartupTiming.Mark("interactive");
             _workspace.Sync.Start();
             _workspace.Updates.Start();
@@ -118,6 +132,9 @@ public partial class App : Application
         _trayIcon?.Dispose();
         _workspace?.Sync.Dispose();
         _workspace?.Updates.Dispose();
+        _workspace?.Capture.Dispose();
+        Sticky.Capture.CaptureEnvironment.OpenSettings = null;
+        Sticky.Capture.CaptureEnvironment.SharedTextSettings = null;
         if (_ownsWorkspaceMutex) _workspaceMutex?.ReleaseMutex();
         _workspaceMutex?.Dispose();
         _instance?.Dispose();
@@ -132,6 +149,7 @@ public partial class App : Application
         Add("搜索便签", workspace.ShowSearch);
         Add("时间轴与重放", () => workspace.ShowHistory());
         Add("新建便签", () => workspace.CreateNote());
+        Add("开始截图", () => { _ = workspace.Capture.StartCaptureAsync(); });
         Add("设置…", workspace.ShowSettings);
         menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
         Add("退出 Sticky", () => { if (workspace.PrepareExit()) Shutdown(); });

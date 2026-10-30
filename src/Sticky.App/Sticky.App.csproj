@@ -10,6 +10,7 @@
     <ApplicationIcon>Assets\Sticky.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="..\Sticky.Capture\Sticky.Capture.csproj" />
     <ProjectReference Include="..\Sticky.UpdateEngine\Sticky.UpdateEngine.csproj" />
     <ProjectReference Include="..\Sticky.Core\Sticky.Core.csproj" />
     <ProjectReference Include="..\Sticky.Storage\Sticky.Storage.csproj" />

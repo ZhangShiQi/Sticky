@@ -10,7 +10,7 @@ using Sticky.App.AI;
 
 namespace Sticky.App;
 
-public enum SettingsSection { Sync, Data, Typography, Application, Updates, History, AI }
+public enum SettingsSection { Sync, Data, Typography, Application, Updates, History, AI, Capture, Translation }
 
 public partial class SettingsWindow : Window
 {
@@ -30,6 +30,7 @@ public partial class SettingsWindow : Window
         DataContext = this;
         SyncHost.Content = new SyncSettingsView(workspace);
         AiHost.Content = new AiSettingsView(workspace);
+        InitializeCaptureSettings();
         LoadTypographyFields(workspace.EditorPreferences);
         RefreshStartup();
         UpdatesPanel.DataContext = workspace.Updates;
@@ -38,8 +39,19 @@ public partial class SettingsWindow : Window
     }
     public void SelectSection(SettingsSection section)
     {
-        SettingsTabs.SelectedIndex = (int)section;
+        SettingsTabs.SelectedItem = section switch {
+            SettingsSection.Sync => SyncTab, SettingsSection.Data => DataTab, SettingsSection.Typography => TypographyTab,
+            SettingsSection.Application => ApplicationTab, SettingsSection.Updates => UpdatesTab, SettingsSection.History => HistoryTab,
+            SettingsSection.AI => AiTab, SettingsSection.Capture => CaptureTab, SettingsSection.Translation => TranslationTab,
+            _ => SyncTab };
         if (section == SettingsSection.Application) RefreshStartup();
+    }
+    public void SelectCaptureSection(Sticky.Capture.CaptureSettingsSection section)
+    {
+        SelectSection(section == Sticky.Capture.CaptureSettingsSection.Capture ? SettingsSection.Capture
+            : section == Sticky.Capture.CaptureSettingsSection.Translation ? SettingsSection.Translation : SettingsSection.AI);
+        if (section is Sticky.Capture.CaptureSettingsSection.TextAi or Sticky.Capture.CaptureSettingsSection.VisionAi)
+            AiTabs.SelectedItem = section == Sticky.Capture.CaptureSettingsSection.TextAi ? CaptureTextAiTab : CaptureVisionAiTab;
     }
     private void RefreshStartup()
     {

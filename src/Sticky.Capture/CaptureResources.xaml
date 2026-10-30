@@ -1,0 +1,12 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <Style TargetType="Button">
+    <Setter Property="Padding" Value="16,9"/><Setter Property="Margin" Value="4"/>
+    <Setter Property="Background" Value="#EFF4F9"/><Setter Property="BorderBrush" Value="#DCE4ED"/>
+    <Setter Property="Cursor" Value="Hand"/>
+  </Style>
+  <Style TargetType="TextBox"/><Style TargetType="ComboBox"/><Style TargetType="CheckBox"/>
+  <Style TargetType="Window">
+    <Setter Property="FontFamily" Value="Segoe UI, Microsoft YaHei UI"/><Setter Property="FontSize" Value="14"/>
+    <Setter Property="Icon" Value="pack://application:,,,/Sticky.Capture;component/Assets/Cut.ico"/>
+  </Style>
+</ResourceDictionary>

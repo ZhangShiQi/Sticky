@@ -19,10 +19,10 @@
     </Style>
   </Window.Resources>
   <TabControl x:Name="SettingsTabs" TabStripPlacement="Left" Background="Transparent" BorderThickness="0" Padding="26,0,0,0" Margin="24">
-    <TabItem Header="同步">
+    <TabItem x:Name="SyncTab" Header="同步">
       <ContentControl x:Name="SyncHost" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
     </TabItem>
-    <TabItem Header="数据与备份">
+    <TabItem x:Name="DataTab" Header="数据与备份">
       <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
         <StackPanel Margin="0,0,6,0">
           <TextBlock Text="数据与备份" FontSize="26" FontWeight="SemiBold" />
@@ -41,11 +41,18 @@
             <Button Content="导出备份…" Click="ExportBackup" Style="{StaticResource PrimaryButton}" />
             <Button Content="导入备份…" Click="ImportBackup" />
           </StackPanel>
+                    <Separator Margin="0,24,0,18"/>
+          <TextBlock Text="导入 cut 设置" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,10"/>
+          <TextBlock Text="导入截图快捷键、文字 AI、视觉 AI 和翻译配置。默认保留 Sticky 已有配置，原 cut 文件保持不变。密钥需要由原 Windows 用户解密。" TextWrapping="Wrap" Margin="0,0,0,12"/>
+          <TextBox x:Name="CutImportPath" AutomationProperties.Name="旧 cut 配置目录" Margin="0,0,0,10"/>
+          <CheckBox x:Name="ReplaceCutSettings" Content="替换已有截图配置" Margin="0,0,0,12"/>
+          <Button Content="导入 cut 设置" Click="ImportCutSettings" HorizontalAlignment="Left"/>
+          <TextBlock x:Name="CutImportStatus" TextWrapping="Wrap" Margin="0,12,0,0"/>
           <TextBlock x:Name="DataStatus" TextWrapping="Wrap" Foreground="#466451" Margin="0,18,0,0" />
         </StackPanel>
       </ScrollViewer>
     </TabItem>
-    <TabItem Header="编辑与排版">
+    <TabItem x:Name="TypographyTab" Header="编辑与排版">
       <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
         <StackPanel Margin="0,0,6,0">
           <TextBlock Text="编辑与排版" FontSize="26" FontWeight="SemiBold" />
@@ -78,7 +85,7 @@
         </StackPanel>
       </ScrollViewer>
     </TabItem>
-    <TabItem Header="应用">
+    <TabItem x:Name="ApplicationTab" Header="应用">
       <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
         <StackPanel Margin="0,0,6,0">
           <TextBlock Text="应用" FontSize="26" FontWeight="SemiBold" />
@@ -102,7 +109,7 @@
         </StackPanel>
       </ScrollViewer>
     </TabItem>
-    <TabItem Header="版本与更新">
+    <TabItem x:Name="UpdatesTab" Header="版本与更新">
       <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
         <StackPanel x:Name="UpdatesPanel" Margin="0,0,6,0">
           <TextBlock Text="版本与更新" FontSize="26" FontWeight="SemiBold" />
@@ -128,7 +135,7 @@
         </StackPanel>
       </ScrollViewer>
     </TabItem>
-    <TabItem Header="历史与重放">
+    <TabItem x:Name="HistoryTab" Header="历史与重放">
       <StackPanel>
         <TextBlock Text="历史与重放" FontSize="26" FontWeight="SemiBold"/>
         <TextBlock Text="每次变化都留在本机，离线也能回看。" Foreground="{StaticResource Muted}" Margin="0,8,0,26"/>
@@ -141,6 +148,14 @@
         <TextBlock Text="在时间轴中点击「导出历史」可保存便签与完整历史备份。恢复到新工作空间时，退出 Sticky，将备份完整解压到空的 Data 目录。普通便签导入不会替换当前时间轴。" TextWrapping="Wrap" Foreground="{StaticResource Muted}" LineHeight="23"/>
       </StackPanel>
     </TabItem>
-    <TabItem Header="AI 接入"><ContentControl x:Name="AiHost" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"/></TabItem>
+        <TabItem x:Name="CaptureTab" Header="截图与录制"><ContentControl x:Name="CaptureHost" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"/></TabItem>
+    <TabItem x:Name="TranslationTab" Header="识别与翻译"><ContentControl x:Name="TranslationHost" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"/></TabItem>
+    <TabItem x:Name="AiTab" Header="AI 接入">
+      <TabControl x:Name="AiTabs" Background="Transparent" BorderThickness="0">
+        <TabItem Header="便签 AI"><ContentControl x:Name="AiHost" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"/></TabItem>
+        <TabItem x:Name="CaptureTextAiTab" Header="截图文字 AI"><ContentControl x:Name="CaptureTextAiHost" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"/></TabItem>
+        <TabItem x:Name="CaptureVisionAiTab" Header="截图视觉 AI"><ContentControl x:Name="CaptureVisionAiHost" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"/></TabItem>
+      </TabControl>
+    </TabItem>
   </TabControl>
 </Window>

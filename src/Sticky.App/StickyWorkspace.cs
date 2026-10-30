@@ -30,6 +30,7 @@ public sealed class StickyWorkspace
     public UpdateCoordinator Updates { get; }
     public AiSettingsStore AiSettings { get; }
     public AiClient AiClient { get; }
+    public Sticky.Capture.CaptureCoordinator Capture { get; }
     private bool _restoringWindows;
     private bool _restoreChanged;
     private bool _restoreLayoutChanged;
@@ -51,6 +52,9 @@ public sealed class StickyWorkspace
         Sync = new SyncCoordinator(this);
         AiSettings.Changed += NotifyChanged;
         Updates = new UpdateCoordinator(this);
+        Capture = new Sticky.Capture.CaptureCoordinator(System.IO.Path.Combine(Store.Root, "device", "capture"),
+            () => !StartupPending && !IsExiting && (Settings?.CanStartCapture ?? true));
+        Capture.Changed += Updates.RefreshCaptureState;
     }
 
     public void NotifyChanged()
@@ -157,12 +161,14 @@ public sealed class StickyWorkspace
 
     public bool PrepareExit(bool installUpdate = false)
     {
+        if (!Capture.TryPrepareExit(installUpdate)) return false;
         foreach (var window in Windows.Values.ToArray()) if (!window.SaveNow()) return false;
         foreach (var window in Windows.Values) window.CaptureWindowState();
         if (!SaveDevice()) return false;
         try { Updates.ScheduleInstallOnExit(installUpdate); }
         catch (Exception ex) { ShowError("无法启动更新，请关闭自动更新后重试退出", ex); return false; }
         IsExiting = true;
+        Capture.Dispose();
         Sync.Dispose();
         AiSettings.Changed -= NotifyChanged;
         Updates.Dispose();
@@ -293,6 +299,20 @@ public sealed class StickyWorkspace
         Settings.SelectSection(section);
         if (Settings.WindowState == System.Windows.WindowState.Minimized) Settings.WindowState = System.Windows.WindowState.Normal;
         Settings.Show(); Settings.Activate();
+    }
+
+    public void ShowCaptureSettings(Sticky.Capture.CaptureSettingsSection section, Window? owner)
+    {
+        if (IsExiting || StartupPending) return;
+        if (owner is not null && Capture.IsActive)
+        {
+            var dialog = new SettingsWindow(this) { Owner = owner, Topmost = owner.Topmost };
+            dialog.SelectCaptureSection(section); dialog.ShowDialog();
+        }
+        else
+        {
+            ShowSettings(SettingsSection.Capture); Settings!.SelectCaptureSection(section);
+        }
     }
 
     public SyncSnapshot CaptureForSync()

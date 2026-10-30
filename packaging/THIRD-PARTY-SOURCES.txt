@@ -1,5 +1,12 @@
 Sticky portable distribution - third-party software
 
+Screenshot module migrated from cut 0.16.0. ZXing.Net, ONNX Runtime,
+OpenCvSharp/OpenCV and PP-OCRv5 models: sources, versions and notices are retained
+under tools/runtime/THIRD-PARTY-NOTICES.txt, tools/runtime/Licenses and Models/manifest.json.
+Unmodified FFmpeg/ffprobe: tools/runtime/MediaTools/ffmpeg contains the pinned
+manifest, GPL license, upstream build README and source/build references.
+Microsoft Visual C++ x64 Redistributable DLLs are copied from the local Visual Studio REDIST.
+
 .NET runtime / WPF / Windows Forms 10.0.14
 https://github.com/dotnet/runtime/tree/v10.0.14
 https://github.com/dotnet/wpf

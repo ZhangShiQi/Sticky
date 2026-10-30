@@ -57,7 +57,8 @@
             </DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
             <Button x:Name="UngroupedButton" Content="未分组" Click="ShowUngrouped" Style="{StaticResource NavigationButton}" Background="{Binding UngroupedBackground}" />
             <Button x:Name="TrashButton" Content="↺   回收站" Click="ShowTrash" Style="{StaticResource NavigationButton}" Background="{Binding TrashBackground}" />
-            <Button x:Name="HistoryButton" Content="◷   时间轴" Click="OpenHistory" Style="{StaticResource NavigationButton}" />
+            <Button Content="截图与录制" Click="StartCapture" Style="{StaticResource NavigationButton}" ToolTip="开始框选，选择截图、长图或录制"/>
+<Button x:Name="HistoryButton" Content="◷   时间轴" Click="OpenHistory" Style="{StaticResource NavigationButton}" />
           </StackPanel>
         </ScrollViewer>
         <Grid Grid.Row="3" Margin="0,16,0,12">

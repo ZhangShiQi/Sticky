@@ -27,7 +27,7 @@ public sealed class UpdateCoordinator : INotifyPropertyChanged, IDisposable
     public bool Automatic { get; private set; } = true;
     public bool IsBusy { get; private set; }
     public bool CanCheck => !IsBusy;
-    public bool CanInstall => !IsBusy && Available is not null && _package is not null && SupportsInstall;
+    public bool CanInstall => !IsBusy && Available is not null && _package is not null && SupportsInstall && !_workspace.Capture.IsActive;
     public bool SupportsInstall => AppPaths.IsPortableBuild && LauncherContext.Root is not null;
     public UpdateRelease? Available { get; private set; }
     public string Status { get; private set; } = "等待检查更新";
@@ -150,6 +150,7 @@ public sealed class UpdateCoordinator : INotifyPropertyChanged, IDisposable
         _package = null;
         return true;
     }
+    public void RefreshCaptureState() => Notify();
     private void Notify() { PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(null)); }
     public void Dispose()
     {

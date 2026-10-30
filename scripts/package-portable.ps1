@@ -1,4 +1,4 @@
-﻿param([string]$OutputDirectory, [switch]$ReadyToRun = $true)
+﻿param([string]$OutputDirectory, [switch]$ReadyToRun = $true, [string]$VcRedistDirectory)
 . "$PSScriptRoot\common.ps1"
 
 $projectDefinition = [xml](Get-Content -LiteralPath (Join-Path $projectRoot 'Directory.Build.props') -Raw)
@@ -31,6 +31,24 @@ $gitZip = Get-VerifiedDownload 'MinGit-2.56.0.3-64-bit.zip' $gitUrl $gitSha
 $gcmZip = Get-VerifiedDownload 'gcm-win-x64-3.0.1.zip' $gcmUrl $gcmSha
 $gcmLicense = Get-VerifiedDownload 'GCM-3.0.1-LICENSE.txt' 'https://raw.githubusercontent.com/git-ecosystem/git-credential-manager/v3.0.1/LICENSE' 'b47f1a8a744ecdc7a3da35804f88552805d33f51a726b87a2105acdfae406b07'
 
+& (Join-Path $PSScriptRoot 'download-ocr-models.ps1')
+& (Join-Path $PSScriptRoot 'download-recording-tools.ps1')
+if (!$VcRedistDirectory) {
+    $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+    if (Test-Path -LiteralPath $vswhere) {
+        $vs = & $vswhere -latest -products '*' -property installationPath
+        if ($vs) {
+            $VcRedistDirectory = Get-ChildItem -LiteralPath (Join-Path $vs 'VC\Redist\MSVC') -Directory |
+                Where-Object { $_.Name -match '^\d+\.\d+\.\d+$' } | Sort-Object { [version]$_.Name } -Descending |
+                ForEach-Object { Join-Path $_.FullName 'x64\Microsoft.VC143.CRT' } | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+        }
+    }
+}
+$captureRuntimeNames = @('msvcp140.dll','msvcp140_1.dll','msvcp140_2.dll','vcruntime140.dll','vcruntime140_1.dll','concrt140.dll')
+foreach ($name in $captureRuntimeNames) {
+    if (!$VcRedistDirectory -or !(Test-Path -LiteralPath (Join-Path $VcRedistDirectory $name))) { throw "Missing x64 VC++ runtime $name. Supply -VcRedistDirectory from the Visual Studio REDIST." }
+}
+
 $publishDirectory = Join-Path $projectRoot ('.tools\publish-' + [Guid]::NewGuid().ToString('N'))
 $publishArtifacts = Join-Path $projectRoot ('.tools\publish-build-' + [Guid]::NewGuid().ToString('N'))
 $launcherDirectory = Join-Path $projectRoot ('.tools\launcher-publish-' + [Guid]::NewGuid().ToString('N'))
@@ -49,7 +67,19 @@ try {
 New-Item -ItemType Directory -Path $OutputDirectory | Out-Null
 Copy-Item -LiteralPath (Join-Path $launcherDirectory 'Sticky.Launcher.exe') -Destination (Join-Path $OutputDirectory 'Sticky.exe')
 New-Item -ItemType Directory -Path (Join-Path $OutputDirectory 'tools\runtime') -Force | Out-Null
-Copy-Item -LiteralPath (Join-Path $publishDirectory 'Sticky.exe') -Destination (Join-Path $OutputDirectory 'tools\runtime\Sticky.exe')
+Copy-Item -Path (Join-Path $publishDirectory '*') -Destination (Join-Path $OutputDirectory 'tools\runtime') -Recurse
+foreach ($name in $captureRuntimeNames) { Copy-Item -LiteralPath (Join-Path $VcRedistDirectory $name) -Destination (Join-Path $OutputDirectory 'tools\runtime') }
+$captureSource = Join-Path $projectRoot 'src\Sticky.Capture'
+foreach ($relative in @('Models/ch_PP-OCRv5_det_mobile.onnx','Models/ch_PP-OCRv5_rec_mobile.onnx','MediaTools/ffmpeg/ffmpeg.exe','MediaTools/ffmpeg/ffprobe.exe')) {
+    $packaged = Join-Path (Join-Path $OutputDirectory 'tools\runtime') $relative
+    if (!(Test-Path -LiteralPath $packaged) -or (Get-FileHash -LiteralPath $packaged).Hash -ne (Get-FileHash -LiteralPath (Join-Path $captureSource $relative)).Hash) {
+        throw "Missing or invalid external capture component: $relative. Do not bundle encoders inside the single-file executable."
+    }
+}
+foreach ($name in @('onnxruntime.lib','onnxruntime_providers_shared.lib')) {
+    $developmentLibrary = Join-Path (Join-Path $OutputDirectory 'tools\runtime') $name
+    if (Test-Path -LiteralPath $developmentLibrary) { Remove-Item -LiteralPath $developmentLibrary }
+}
 Expand-Archive -LiteralPath $gitZip -DestinationPath (Join-Path $OutputDirectory 'tools\git')
 Expand-Archive -LiteralPath $gcmZip -DestinationPath (Join-Path $OutputDirectory 'tools\gcm')
 Copy-Item -LiteralPath $gcmLicense -Destination (Join-Path $OutputDirectory 'tools\gcm\LICENSE.txt')

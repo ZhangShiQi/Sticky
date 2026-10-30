@@ -1,4 +1,4 @@
-param([string]$ArtifactsPath)
+﻿param([string]$ArtifactsPath, [switch]$NativeCapture)
 . "$PSScriptRoot\scripts\common.ps1"
 Push-Location $projectRoot
 try {
@@ -9,4 +9,5 @@ try {
         else { Join-Path $projectRoot 'tests\Sticky.Tests\bin\Release\net10.0-windows\Sticky.Tests.dll' }
     & $dotnet $testAssembly $testDirectory
     if ($LASTEXITCODE -ne 0) { throw 'Sticky tests failed.' }
+    & (Join-Path $projectRoot 'scripts\test-capture.ps1') -NoBuild -ArtifactsPath $ArtifactsPath -Native:$NativeCapture
 } finally { Pop-Location }

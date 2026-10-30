@@ -39,6 +39,7 @@ public partial class MainWindow : Window
     private void ShowUngrouped(object sender, RoutedEventArgs e) => _viewModel.SelectGroup(null, ungroupedOnly: true);
     private void ShowTrash(object sender, RoutedEventArgs e) => _viewModel.ShowDeleted = true;
     private void OpenSettings(object sender, RoutedEventArgs e) => _workspace.ShowSettings();
+    private async void StartCapture(object sender, RoutedEventArgs e) => await _workspace.Capture.StartCaptureAsync(this);
     private void OpenHistory(object sender, RoutedEventArgs e) => _workspace.ShowHistory();
     private void ToggleView(object sender, RoutedEventArgs e)
     {

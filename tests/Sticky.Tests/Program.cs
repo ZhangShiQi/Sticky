@@ -137,6 +137,10 @@ internal static partial class Program
         Run("AI note toolbar previews before replacement and appends an undoable history change", AiNotePreviewAndHistory);
         if (GitIntegrationTests.ToolBaseDirectory is not null)
             Run("Bundled native Git and GCM run with no system Git or dotnet on PATH", () => GitTest("portable-tools", GitIntegrationTests.PortableTools));
+        Run("Capture settings unify navigation, recording defaults, credential guards and editor lifetime", CaptureSettingsIntegration);
+        Run("Capture imports re-encrypt legacy profiles, preserve source and reject corrupt replacements", CaptureImportIntegration);
+        Run("Capture session prevents reentry and restores the host after cancellation", CaptureSessionIntegration);
+        Run("Capture tool dialogs keep Sticky targets interactive and restore their owner", CaptureDialogInteraction);
         Console.WriteLine($"\n{_passed} passed; {_failed} failed. Artifacts: {_root}");
         app.Shutdown();
         return _failed == 0 ? 0 : 1;

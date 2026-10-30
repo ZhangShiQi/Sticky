@@ -52,3 +52,10 @@ Desktop.ini
 *.key
 *.pem
 secrets.json
+
+# Reproducible capture binaries
+/src/Sticky.Capture/Models/*.onnx
+/src/Sticky.Capture/MediaTools/ffmpeg/*.exe
+/src/Sticky.Capture/Models/*.download
+/src/Sticky.Capture/MediaTools/ffmpeg/*.download*
+/tests/Sticky.Capture.Tests/artifacts/

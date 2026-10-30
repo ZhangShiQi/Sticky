@@ -1,4 +1,4 @@
-[CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Low')]
+﻿[CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Low')]
 param([string]$Version, [switch]$Login)
 
 $ErrorActionPreference = 'Stop'
@@ -91,7 +91,7 @@ try {
     & (Join-Path $PSScriptRoot 'test-release.ps1')
     & (Join-Path $PSScriptRoot 'test-publish-release.ps1')
     & (Join-Path $PSScriptRoot 'test-package-archive.ps1')
-    & (Join-Path $projectRoot 'test.ps1') -ArtifactsPath (Join-Path $outputRoot 'test-build')
+    & (Join-Path $projectRoot 'test.ps1') -ArtifactsPath (Join-Path $outputRoot 'test-build') -NativeCapture
     $outputDirectory = Join-Path $outputRoot "Sticky-$Version-win-x64-portable"
     & (Join-Path $PSScriptRoot 'package-portable.ps1') -OutputDirectory $outputDirectory
     $package = $outputDirectory + '.zip'

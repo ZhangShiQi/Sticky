@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AssemblyName>Sticky.Capture</AssemblyName>
+    <RootNamespace>Sticky.Capture</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="ZXing.Net" Version="0.16.11" />
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.31.0" />
+    <PackageReference Include="OpenCvSharp4" Version="4.13.0.20260627" />
+    <PackageReference Include="OpenCvSharp4.runtime.win.slim" Version="4.13.0.20260627" />
+    <Resource Include="Assets/Cut.ico;Assets/Toolbar/*.svg" />
+    <None Update="Models/*.onnx;Models/manifest.json;MediaTools/ffmpeg/*.exe;MediaTools/ffmpeg/*.json;MediaTools/ffmpeg/*.txt;MediaTools/ffmpeg/README.md;Licenses/*;THIRD-PARTY-NOTICES.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
+    <InternalsVisibleTo Include="Sticky.Capture.Tests" />
+    <InternalsVisibleTo Include="Sticky.Tests" />
+  </ItemGroup>
+  <Target Name="CheckCaptureComponents" BeforeTargets="BeforeBuild">
+    <Error Condition="!Exists('Models/ch_PP-OCRv5_det_mobile.onnx') Or !Exists('Models/ch_PP-OCRv5_rec_mobile.onnx')" Text="缺少 OCR 模型，请运行 scripts/download-ocr-models.ps1" />
+    <Error Condition="!Exists('MediaTools/ffmpeg/ffmpeg.exe') Or !Exists('MediaTools/ffmpeg/ffprobe.exe')" Text="缺少录制工具，请运行 scripts/download-recording-tools.ps1" />
+  </Target>
+</Project>

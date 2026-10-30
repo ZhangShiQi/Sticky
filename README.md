@@ -1,10 +1,10 @@
 # Sticky
 
-一个本地优先的 Windows 便签工具。C# / .NET 10 / WPF。主程序不依赖第三方 NuGet 包；Windows x64 便携版内置 .NET 运行时、Git 和登录组件。
+一个本地优先的 Windows 便签工具。C# / .NET 10 / WPF。Windows x64 便携版内置 .NET 运行时、Git、登录组件，以及截图、离线 OCR 和 GIF/MP4 录制组件。
 
 ## 使用 Windows 便携版
 
-从 [GitHub Releases](https://github.com/ZhangShiQi/Sticky/releases) 获取已发布的 Windows x64 便携包，或自行打包生成 `dist/Sticky-0.6.5-win-x64-portable.zip`，完整解压后双击根目录的 `Sticky.exe`。目标电脑不需要安装 .NET SDK、.NET Runtime 或 Git。请保留随包的 `tools` 文件夹，包含 WPF 程序、Git 和 Git Credential Manager。源码仓库不包含发布包；从源码获取后，可按下文运行打包脚本生成。当前源码版本为 0.6.5，已发布版本与更新记录见 Releases。
+从 [GitHub Releases](https://github.com/ZhangShiQi/Sticky/releases) 获取已发布的 Windows x64 便携包，或自行打包生成 `dist/Sticky-0.7.0-win-x64-portable.zip`，完整解压后双击根目录的 `Sticky.exe`。目标电脑不需要安装 .NET SDK、.NET Runtime 或 Git。请保留随包的 `tools` 文件夹，包含 WPF 程序、Git 和 Git Credential Manager。源码仓库不包含发布包；从源码获取后，可按下文运行打包脚本生成。当前源码版本为 0.7.0，已发布版本与更新记录见 Releases。
 
 便携版自动将数据存到 exe 旁边的 `Data`，不依赖当前工作目录，也不读取开发预览 `.local-demo` 中的便签。发布包是空白工作空间，不包含开发机上的便签、仓库配置、Git 历史或凭据。原有便签可先导出 ZIP，再在便携版导入。
 
@@ -33,6 +33,13 @@
 
 脚本校验官方 Git/GCM 下载包的 SHA256，生成自包含 exe、依赖组件、使用说明、许可证、版本清单、ZIP 和 ZIP 校验文件。开发机打包需要 .NET 10 SDK，目标电脑运行不需要。发布配置为 `src/Sticky.App/Properties/PublishProfiles/Portable.pubxml`，不裁剪 WPF 程序。
 
+## 截图、长图与录制
+
+0.7.0 已内置 cut 0.16.0 的全部功能：普通截图、窗口预选、多屏框选、标注、二维码、离线 OCR、翻译、文字/视觉 AI、手动/自动长截图，以及带裁剪预览的 GIF/MP4 区域录制。默认 **Ctrl+Alt+A**，也可从管理页和托盘启动；只需运行 Sticky。
+
+设置统一位于「截图与录制」「识别与翻译」和「AI 接入」的截图文字/视觉页签；「数据与备份」支持导入旧 cut 设置。截图专属配置保存在 `Data/device/capture`，密钥本机加密，不参与 Git 同步。正在进行的截图任务会阻止重启更新。完整操作、限制、迁移和测试说明见 [截图与录制](docs/capture.md)。
+
+首次从源码构建请先运行 `scripts/download-ocr-models.ps1` 和 `scripts/download-recording-tools.ps1`，校验并下载固定版本组件。发布包已内置这些文件，无需运行时下载。打包机还需 Visual Studio x64 VC143 REDIST（可用 `-VcRedistDirectory` 指定），目标电脑无需安装 SDK。
 ## AI 接入与自定义功能
 
 在「设置 → AI 接入」配置 OpenAI 兼容 API 地址、模型和本机密钥，思考模式默认关闭，支持 DeepSeek 显式关闭思考和连接测试。「自定义功能」可编辑按钮名称、提示词、预设 SVG 图标及启用状态。选中文字后点击便签工具栏「AI」，从列表选择润色、翻译、提炼要点等自己配置的功能；预览并确认后仅替换原选区，支持撤销与本地历史记录。连接参数、思考开关、提示词和图标随 GitHub 同步，并发冲突保留双方；API 密钥按 Windows 当前用户加密，只留在本机，新设备需填写自己的密钥。断网时仍可正常编辑保存。详见 [AI 接入与自定义功能](docs/ai.md)。
