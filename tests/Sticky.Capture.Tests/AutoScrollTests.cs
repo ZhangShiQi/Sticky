@@ -179,7 +179,7 @@ internal static class AutoScrollTests
             // can round glyph colors differently from the original off-screen bitmap.
             page.Height = 885; await Task.Delay(200); page.UpdateLayout();
             var fullOrigin = scroller.PointToScreen(new Point(0, 0)); var fullDpi = VisualTreeHelper.GetDpi(scroller);
-            ScrollTests.FocusFixture(page);
+            await ScrollTests.FocusFixtureAsync(page);
             var nativeReference = CaptureService.CaptureRegion(new((int)fullOrigin.X, (int)fullOrigin.Y,
                 (int)(scroller.ActualWidth * fullDpi.DpiScaleX), (int)(scroller.ActualHeight * fullDpi.DpiScaleY)));
             page.Height = 500; await Task.Delay(200); page.UpdateLayout();
@@ -192,7 +192,7 @@ internal static class AutoScrollTests
             {
                 imageControl.Source = image; scroller.ScrollToVerticalOffset(direction == ScrollDirection.Down ? 0 : 385); await Task.Delay(160);
                 capture = new(area, monitor) { ResolveTargetForTest = () => hwnd, AutoScroll = true, Speed = speed, Direction = direction, AutomaticPolling = false, CountdownMilliseconds = 150 };
-                capture.Show(); await capture.ToggleAsync(); ScrollTests.FocusFixture(page);
+                capture.Show(); await capture.ToggleAsync(); await ScrollTests.FocusFixtureAsync(page);
                 SetCursorPos(area.X + 320, area.Y + 220);
                 long deadline = Environment.TickCount64 + 35000;
                 while (capture.Running && Environment.TickCount64 < deadline) { await Task.Delay(120); await capture.PollAsync(); }
@@ -207,7 +207,7 @@ internal static class AutoScrollTests
                 if (direction == ScrollDirection.Down && speed == ScrollSpeed.Standard)
                 {
                     imageControl.Source = ScrollTests.Fixture(700, 981); await Task.Delay(120);
-                    await capture.ToggleAsync(); ScrollTests.FocusFixture(page); SetCursorPos(area.X + 320, area.Y + 220);
+                    await capture.ToggleAsync(); await ScrollTests.FocusFixtureAsync(page); SetCursorPos(area.X + 320, area.Y + 220);
                     deadline = Environment.TickCount64 + 18000;
                     while (capture.Running && Environment.TickCount64 < deadline) { await Task.Delay(120); await capture.PollAsync(); }
                     Check(capture.Document.Height == (int)Math.Round(981 * dpi.DpiScaleY), "Native continue after newly appended content");
@@ -224,11 +224,11 @@ internal static class AutoScrollTests
             capture.Show();
             async Task Arm()
             {
-                await capture.ToggleAsync(); ScrollTests.FocusFixture(page); SetCursorPos(area.X + 320, area.Y + 220);
+                await capture.ToggleAsync(); await ScrollTests.FocusFixtureAsync(page); SetCursorPos(area.X + 320, area.Y + 220);
                 for (int i = 0; i < 3; i++) { await Task.Delay(120); await capture.PollAsync(); }
                 Check(capture.Running, "Rearmed: " + capture.Message);
             }
-            await capture.ToggleAsync(); ScrollTests.FocusFixture(page); SetCursorPos(area.X + 320, area.Y + 220);
+            await capture.ToggleAsync(); await ScrollTests.FocusFixtureAsync(page); SetCursorPos(area.X + 320, area.Y + 220);
             keybd_event(0x11, 0, 0, UIntPtr.Zero);
             try { await Task.Delay(80); await capture.PollAsync(); Check(!capture.Running && capture.InputsSent == 0, "Held Ctrl during countdown cannot cause wheel zoom"); }
             finally { keybd_event(0x11, 0, 2, UIntPtr.Zero); }
@@ -242,7 +242,7 @@ internal static class AutoScrollTests
             await Arm();
             mouse_event(0x0800, 0, 0, unchecked((uint)-120), UIntPtr.Zero); await Task.Delay(180);
             Check(!capture.Running && capture.Message.Contains("手动操作"), "External wheel takeover pauses");
-            await Arm(); ScrollTests.FocusFixture(capture); await capture.PollAsync();
+            await Arm(); await ScrollTests.FocusFixtureAsync(capture); await capture.PollAsync();
             Check(!capture.Running, "Focus loss pauses");
             await Arm();
             Button? FindPause(DependencyObject parent)

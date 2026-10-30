@@ -29,6 +29,21 @@ internal static class ScrollTests
         try { window.Activate(); SetForegroundWindow(handle); }
         finally { if (attached) AttachThreadInput(current, foreground, false); }
     }
+    internal static async Task FocusFixtureAsync(Window window)
+    {
+        var handle = new WindowInteropHelper(window).Handle;
+        for (var attempt = 0; attempt < 20; attempt++)
+        {
+            FocusFixture(window);
+            await Task.Delay(50);
+            if (NativeMethods.GetForegroundWindow() != handle) continue;
+            // Show/close activation and DWM composition can arrive after Show
+            // returns. Verify a settled foreground handoff before capture.
+            await Task.Delay(100);
+            if (NativeMethods.GetForegroundWindow() == handle) return;
+        }
+        throw new InvalidOperationException("Synthetic target did not retain foreground focus; desktop may be in use.");
+    }
     private static void Check(bool value, string label) { if (!value) throw new InvalidOperationException(label); }
     internal static BitmapSource Fixture(int width = 640, int height = 2600, bool chat = false)
     {
@@ -228,7 +243,7 @@ internal static class ScrollTests
             var monitor = NativeMethods.Monitors().First(m => m.Contains(new(area.X, area.Y)));
             var handle = new WindowInteropHelper(page).Handle;
             capture = new(area, monitor) { ResolveTargetForTest = () => handle, AutomaticPolling = false };
-            capture.Show(); await capture.ToggleAsync(); FocusFixture(page); await Task.Delay(100);
+            capture.Show(); await capture.ToggleAsync(); await FocusFixtureAsync(page); await Task.Delay(100);
             for (int i = 0; i < 3; i++) { await capture.PollAsync(); await Task.Delay(50); }
             Check(capture.Document is not null && capture.Running, "Native stable initial frame: " + capture.Message);
             var original = capture.Document!.Last;
@@ -248,7 +263,7 @@ internal static class ScrollTests
             ExportService.SavePng(capture.Document.Build(), Path.Combine(output, "scroll-native-output.png"));
             capture.Close(); page.Left -= 20; scroller.ScrollToVerticalOffset(600); await Task.Delay(150);
             capture = new(area, monitor) { ResolveTargetForTest = () => handle, AutomaticPolling = false, Direction = ScrollDirection.Up };
-            capture.Show(); await capture.ToggleAsync(); FocusFixture(page); await Task.Delay(100);
+            capture.Show(); await capture.ToggleAsync(); await FocusFixtureAsync(page); await Task.Delay(100);
             for (int i = 0; i < 3; i++) { await capture.PollAsync(); await Task.Delay(50); }
             Check(capture.Document is not null, "Native up seed: " + capture.Message);
             scroller.ScrollToVerticalOffset(480); await Task.Delay(150);
@@ -263,9 +278,7 @@ internal static class ScrollTests
             {
                 try
                 {
-                    await modal.ToggleAsync(); FocusFixture(modal); await Task.Delay(100);
-                    for (int attempt = 0; attempt < 10 && NativeMethods.GetForegroundWindow() != new WindowInteropHelper(modal).Handle; attempt++)
-                    { FocusFixture(modal); await Task.Delay(50); }
+                    await modal.ToggleAsync(); await FocusFixtureAsync(modal); await Task.Delay(100);
                     for (int i = 0; i < 3; i++) { await modal.PollAsync(); await Task.Delay(50); }
                     Check(modal.Document is not null, "Modal native initial frame: " + modal.Message); await modal.CompleteAsync();
                 }
