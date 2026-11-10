@@ -442,6 +442,10 @@ internal static class RecordingTests
         var ready = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         window.ContentRendered += (_, _) => ready.TrySetResult();
         window.Show(); await ready.Task;
+        // The parent records real stop input only after this independent target
+        // is visible. Settle foreground activation before advertising readiness;
+        // raising Z order in the parent alone can leave it behind another app.
+        await ScrollTests.FocusFixtureAsync(window);
         Console.WriteLine("fixture_hwnd=" + new WindowInteropHelper(window).Handle.ToInt64());
         Console.WriteLine("frame=1"); Console.WriteLine("progress=continue"); await Console.Out.FlushAsync();
         // Console's synchronized reader can block inside ReadLineAsync. Never
