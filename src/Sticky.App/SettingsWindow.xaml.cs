@@ -143,7 +143,7 @@ public partial class SettingsWindow : Window
         if (!_workspace.SaveAllNotes()) return;
         var dialog = new SaveFileDialog { Filter = "Sticky 备份 (*.zip)|*.zip", FileName = $"Sticky-{DateTime.Now:yyyyMMdd-HHmm}.zip" };
         if (dialog.ShowDialog(this) != true) return;
-        try { BackupService.Export(_workspace.Store, dialog.FileName); DataStatus.Text = "备份已导出，包含全部便签、分组、回收站和图片。"; }
+        try { BackupService.Export(_workspace.Store, dialog.FileName); DataStatus.Text = "备份已导出，包含普通便签、分组、回收站、图片及加密保险箱（如有）。"; }
         catch (Exception ex) { StickyWorkspace.ShowError("导出失败", ex); }
     }
     private void ImportBackup(object sender, RoutedEventArgs e)
@@ -156,6 +156,8 @@ public partial class SettingsWindow : Window
             _workspace.Groups.Clear(); _workspace.Groups.AddRange(_workspace.Store.LoadGroups());
             _workspace.Notes.AddRange(notes); _workspace.NotifyChanged();
             DataStatus.Text = $"已导入 {notes.Count} 张便签，相同 ID 的便签作为新副本保留。";
+            using var archive = System.IO.Compression.ZipFile.OpenRead(dialog.FileName);
+            if (archive.GetEntry(VaultStore.FileName) is not null) DataStatus.Text += " 此 ZIP 内的保险箱尚未导入，请在「保险箱 → 导入加密保险箱」选择同一个 ZIP 并验证主密码。";
         }
         catch (Exception ex) { StickyWorkspace.ShowError("导入失败", ex); }
     }

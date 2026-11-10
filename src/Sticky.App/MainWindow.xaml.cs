@@ -41,6 +41,7 @@ public partial class MainWindow : Window
     private void OpenSettings(object sender, RoutedEventArgs e) => _workspace.ShowSettings();
     private async void StartCapture(object sender, RoutedEventArgs e) => await _workspace.Capture.StartCaptureAsync(this);
     private void OpenHistory(object sender, RoutedEventArgs e) => _workspace.ShowHistory();
+    private void OpenVault(object sender, RoutedEventArgs e) => _workspace.ShowVault();
     private void ToggleView(object sender, RoutedEventArgs e)
     {
         try { _viewModel.ToggleView(); }
@@ -85,6 +86,8 @@ public partial class MainWindow : Window
     {
         if (sender is not Button { DataContext: NoteCard card } button) return;
         var menu = new ContextMenu { PlacementTarget = button };
+        var vault = new MenuItem { Header = "移入保险箱…" };
+        vault.Click += (_, _) => _workspace.MoveIntoVault(card.Note); menu.Items.Add(vault);
         button.ContextMenu = menu;
         var history = new MenuItem { Header = "历史版本与重放…" };
         history.Click += (_, _) => _workspace.ShowHistory(card.Note.Id);

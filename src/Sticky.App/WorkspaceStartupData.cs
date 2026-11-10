@@ -12,7 +12,9 @@ public sealed record WorkspaceStartupData(NoteStore Store, List<Note> Notes, Lis
     {
         StartupTiming.Mark("data-load-start");
         var store = new NoteStore(root);
-        var notes = store.LoadNotes();
+        var migrations = new VaultMigration(store);
+        migrations.CompletePending();
+        var notes = store.LoadNotes().Where(n => !migrations.MovedIds.Contains(n.Id)).ToList();
         var groups = store.LoadGroups();
         var recovered = false;
         foreach (var id in notes.Where(n => n.GroupId.HasValue).Select(n => n.GroupId!.Value).Distinct())

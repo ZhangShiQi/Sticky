@@ -64,7 +64,7 @@ public sealed class SyncCoordinator : INotifyPropertyChanged, IDisposable
 
     public async Task RunAsync(bool interactive = false)
     {
-        if (_disposed || IsBusy || !Settings.Enabled) return;
+        if (_disposed || IsBusy || !Settings.Enabled || _workspace.VaultTransferInProgress) return;
         IsBusy = true; _active = new CancellationTokenSource(); Notify();
         var token = _active.Token;
         SetStatus("正在同步…", "本地编辑和自动保存仍然可用。");

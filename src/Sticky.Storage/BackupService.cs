@@ -14,6 +14,8 @@ public static class BackupService
             using (var archive = ZipFile.Open(temporary, ZipArchiveMode.Create))
             {
                 archive.CreateEntryFromFile(Path.Combine(store.Root, "manifest.json"), "manifest.json");
+                var vault = Path.Combine(store.Root, VaultStore.FileName);
+                if (File.Exists(vault)) archive.CreateEntryFromFile(vault, VaultStore.FileName);
                 var groupsPath = Path.Combine(store.Root, "groups.json");
                 if (File.Exists(groupsPath)) archive.CreateEntryFromFile(groupsPath, "groups.json");
                 foreach (var path in Directory.EnumerateFiles(store.NotesDirectory, "*.json"))
@@ -42,7 +44,7 @@ public static class BackupService
         {
             var name = entry.FullName;
             if (!seen.Add(name)) throw new InvalidDataException("备份包含重复文件。");
-            if (name is "manifest.json" or "notes/" or "assets/") continue;
+            if (name is "manifest.json" or "notes/" or "assets/" or VaultStore.FileName) continue;
             total += entry.Length;
             if (entry.Length > 20 * 1024 * 1024 || total > 256 * 1024 * 1024)
                 throw new InvalidDataException("备份过大（单文件上限 20 MB，总计上限 256 MB）。");
@@ -64,7 +66,11 @@ public static class BackupService
             }
             else throw new InvalidDataException("备份包含不支持的文件。");
         }
-        if (notes.Count == 0 && importedGroups.Count == 0) throw new InvalidDataException("备份中没有便签或分组。");
+        if (notes.Count == 0 && importedGroups.Count == 0)
+        {
+            if (archive.GetEntry(VaultStore.FileName) is not null) return [];
+            throw new InvalidDataException("备份中没有便签或分组。");
+        }
         var originalGroups = store.LoadGroups();
         var mergedGroups = originalGroups.Select(g => new NoteGroup { Id = g.Id, Name = g.Name }).ToList();
         var groupMap = new Dictionary<Guid, Guid>();

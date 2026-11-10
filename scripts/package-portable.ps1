@@ -104,6 +104,7 @@ $instructions = Get-Content -LiteralPath (Join-Path $projectRoot 'packaging\ä½¿ç
 New-Item -ItemType Directory -Path (Join-Path $OutputDirectory 'assets') | Out-Null
 Copy-Item -LiteralPath (Join-Path $projectRoot 'src\Sticky.App\Assets\Sticky.svg') -Destination (Join-Path $OutputDirectory 'assets\Sticky.svg')
 Copy-Item -LiteralPath (Join-Path $projectRoot 'packaging\THIRD-PARTY-SOURCES.txt') -Destination (Join-Path $licenses 'THIRD-PARTY-SOURCES.txt')
+Copy-Item -LiteralPath (Join-Path $projectRoot 'packaging\Konscious-MIT.txt') -Destination (Join-Path $licenses 'Konscious-MIT.txt')
 [System.IO.File]::WriteAllText((Join-Path $OutputDirectory 'portable.flag'), 'Sticky portable workspace; data is stored beside Sticky.exe in Data.')
 $manifest = [ordered]@{
     application = 'Sticky'; version = $version; runtimeIdentifier = 'win-x64'; selfContained = $true; singleFile = $true

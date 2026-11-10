@@ -39,6 +39,11 @@ internal static partial class Program
         app.InitializeComponent();
         app.ShutdownMode = ShutdownMode.OnExplicitShutdown;
         Run("JSON preserves Chinese text, formatting, lists, and deletion", StorageRoundTrip);
+        Run("Vault encryption, recovery and portable password unlock preserve rich data", VaultPortability);
+        Run("Vault rejects tampering, wrong passwords and failed writes without replacing data", VaultTampering);
+        Run("Vault migration purges local plaintext while retaining ordinary history and blocking resurrection", VaultMigrationCleanup);
+        Run("Vault editor saves encrypted data and clears private UI on lock", VaultUiLock);
+        Run("Vault interrupted migration resumes cleanup and preserves shared images", VaultInterruptedMigration);
         Run("Interrupted/corrupt save restores backup and preserves damaged source", BackupRecovery);
         Run("Corrupt notes do not hide healthy notes", CorruptIsolation);
         Run("Unsupported schema is reported without rewriting files", UnsupportedSchema);

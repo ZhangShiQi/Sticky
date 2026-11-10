@@ -28,6 +28,7 @@ public sealed partial class NoteStore
     public NoteStore(string root, HistoryOptions? historyOptions = null)
     {
         Root = Path.GetFullPath(root);
+        HistoryStore.RecoverVaultRewrite(Root);
         Directory.CreateDirectory(NotesDirectory);
         Directory.CreateDirectory(AssetsDirectory);
         Directory.CreateDirectory(Path.Combine(Root, "device"));
@@ -98,6 +99,8 @@ public sealed partial class NoteStore
     public void Save(Note note)
     {
         Validate(note);
+        if ((note.Title.Length != 0 || note.Blocks.Count != 0 || note.DeletedAt is null) && new VaultMigration(this).MovedIds.Contains(note.Id))
+            throw new InvalidOperationException("此便签已移入保险箱，不能将旧版本恢复为明文；请使用保险箱。需要明文副本时请从保险箱移出。");
         var bytes = JsonSerializer.SerializeToUtf8Bytes(note, JsonOptions);
         if (bytes.Length > 20 * 1024 * 1024) throw new InvalidDataException("便签正文超过 20 MB，请拆分为多张便签。");
         History.WriteDocument("notes/" + note.Id + ".json", bytes, () => AtomicWrite(Path.Combine(NotesDirectory, note.Id + ".json"), bytes));

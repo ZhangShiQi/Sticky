@@ -22,5 +22,9 @@ public static class NoteMenus
         }
         Add("未分组", null);
         foreach (var group in workspace.Groups.OrderBy(g => g.Name)) Add(group.Name, group.Id);
+        items.Add(new Separator());
+        var vault = new MenuItem { Header = "移入保险箱…" };
+        vault.Click += (_, _) => workspace.MoveIntoVault(note);
+        items.Add(vault);
     }
 }

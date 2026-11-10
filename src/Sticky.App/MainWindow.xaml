@@ -57,6 +57,7 @@
             </DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
             <Button x:Name="UngroupedButton" Content="未分组" Click="ShowUngrouped" Style="{StaticResource NavigationButton}" Background="{Binding UngroupedBackground}" />
             <Button x:Name="TrashButton" Content="↺   回收站" Click="ShowTrash" Style="{StaticResource NavigationButton}" Background="{Binding TrashBackground}" />
+            <Button x:Name="VaultButton" Content="🔒   保险箱" Click="OpenVault" Style="{StaticResource NavigationButton}" ToolTip="主密码加密；导出加密文件后可在另一台电脑打开" />
             <Button Content="截图与录制" Click="StartCapture" Style="{StaticResource NavigationButton}" ToolTip="开始框选，选择截图、长图或录制"/>
 <Button x:Name="HistoryButton" Content="◷   时间轴" Click="OpenHistory" Style="{StaticResource NavigationButton}" />
           </StackPanel>

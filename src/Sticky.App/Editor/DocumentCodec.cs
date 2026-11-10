@@ -127,10 +127,13 @@ public static class DocumentCodec
     }
 
     public static FlowDocument Decode(IEnumerable<NoteBlock> blocks, NoteStore store, bool darkTheme = false, EditorPreferences? preferences = null)
+        => Decode(blocks, id => File.OpenRead(store.GetAssetPath(id)), darkTheme, preferences);
+
+    public static FlowDocument Decode(IEnumerable<NoteBlock> blocks, Func<string, Stream> readImage, bool darkTheme = false, EditorPreferences? preferences = null)
     {
         var document = new FlowDocument { FontFamily = new FontFamily("Segoe UI, Microsoft YaHei UI"),
             PagePadding = new Thickness(0), Foreground = darkTheme ? new SolidColorBrush(Color.FromRgb(236, 236, 236)) : new SolidColorBrush(Color.FromRgb(41, 43, 50)) };
-        foreach (var block in blocks) document.Blocks.Add(DecodeBlock(block, store, darkTheme));
+        foreach (var block in blocks) document.Blocks.Add(DecodeBlock(block, readImage, darkTheme));
         if (document.Blocks.Count == 0) document.Blocks.Add(new Paragraph());
         ApplyDefaults(document, preferences ?? new EditorPreferences());
         return document;
@@ -161,7 +164,7 @@ public static class DocumentCodec
         ApplyBlocks(document.Blocks);
     }
 
-    private static Block DecodeBlock(NoteBlock block, NoteStore store, bool darkTheme)
+    private static Block DecodeBlock(NoteBlock block, Func<string, Stream> readImage, bool darkTheme)
     {
         if (block.Kind == "list")
         {
@@ -170,7 +173,7 @@ public static class DocumentCodec
             foreach (var item in block.Children)
             {
                 var li = new ListItem();
-                foreach (var child in item.Children) li.Blocks.Add(DecodeBlock(child, store, darkTheme));
+                foreach (var child in item.Children) li.Blocks.Add(DecodeBlock(child, readImage, darkTheme));
                 if (li.Blocks.Count == 0) li.Blocks.Add(new Paragraph());
                 list.ListItems.Add(li);
             }
@@ -181,7 +184,7 @@ public static class DocumentCodec
         {
             if (inline.Kind == "image" && inline.AssetId is { } id)
             {
-                var image = CreateImage(id, inline.Width, store);
+                var image = CreateImage(id, inline.Width, readImage);
                 paragraph.Inlines.Add(new InlineUIContainer(image) { BaselineAlignment = BaselineAlignment.Center });
             }
             else
@@ -203,12 +206,15 @@ public static class DocumentCodec
     }
 
     public static Image CreateImage(string id, double width, NoteStore store)
+        => CreateImage(id, width, asset => File.OpenRead(store.GetAssetPath(asset)));
+
+    public static Image CreateImage(string id, double width, Func<string, Stream> readImage)
     {
         var image = new Image { Tag = id, Width = double.IsFinite(width) ? Math.Clamp(width, 60, 800) : 280,
             MaxWidth = 800, Stretch = Stretch.Uniform, Margin = new Thickness(0, 8, 0, 8), ToolTip = "双击放大查看；右键调整图片大小或移除图片" };
         try
         {
-            using var stream = File.OpenRead(store.GetAssetPath(id));
+            using var stream = readImage(id);
             image.Source = LoadBitmap(stream);
         }
         catch (Exception ex) when (ex is IOException or NotSupportedException or ArgumentException or InvalidOperationException)

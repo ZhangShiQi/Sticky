@@ -10,7 +10,7 @@ using WindowState = Sticky.Core.WindowState;
 
 namespace Sticky.App;
 
-public sealed class StickyWorkspace
+public sealed partial class StickyWorkspace
 {
     public NoteStore Store { get; }
     public List<Note> Notes { get; }
@@ -41,6 +41,8 @@ public sealed class StickyWorkspace
     public StickyWorkspace(WorkspaceStartupData data, StartupRegistration? startup = null, AiClient? aiClient = null)
     {
         Store = data.Store;
+        Vault = new VaultStore(Store.Root);
+        VaultMigrations = new VaultMigration(Store);
         AiSettings = new AiSettingsStore(Store.Root);
         AiClient = aiClient ?? new AiClient();
         Startup = startup ?? new StartupRegistration(LauncherContext.Root is string launcherRoot ? System.IO.Path.Combine(launcherRoot, "Sticky.exe")
@@ -161,6 +163,7 @@ public sealed class StickyWorkspace
 
     public bool PrepareExit(bool installUpdate = false)
     {
+        if (VaultWindow is not null && !VaultWindow.LockVault()) return false;
         if (!Capture.TryPrepareExit(installUpdate)) return false;
         foreach (var window in Windows.Values.ToArray()) if (!window.SaveNow()) return false;
         foreach (var window in Windows.Values) window.CaptureWindowState();
@@ -173,6 +176,8 @@ public sealed class StickyWorkspace
         AiSettings.Changed -= NotifyChanged;
         Updates.Dispose();
         foreach (var window in Windows.Values.ToArray()) window.Close();
+        VaultWindow?.Close();
+        Vault.Dispose();
         Search?.Close();
         Settings?.Close();
         AiClient.Dispose();
@@ -183,6 +188,7 @@ public sealed class StickyWorkspace
 
     public bool SaveAllNotes()
     {
+        if (VaultWindow is not null && !VaultWindow.SaveCurrent()) return false;
         foreach (var window in Windows.Values.ToArray()) if (!window.SaveNow()) return false;
         return true;
     }
@@ -319,9 +325,11 @@ public sealed class StickyWorkspace
     {
         if (!SaveAllNotes()) throw new System.IO.IOException("存在尚未保存成功的便签，同步已暂停；编辑内容仍保留在窗口中。");
         foreach (var file in System.IO.Directory.EnumerateFiles(Store.NotesDirectory, "*.json"))
-            if (Guid.TryParse(System.IO.Path.GetFileNameWithoutExtension(file), out var id) && !Notes.Any(n => n.Id == id))
+            if (Guid.TryParse(System.IO.Path.GetFileNameWithoutExtension(file), out var id) && !Notes.Any(n => n.Id == id) && !VaultMigrations.MovedIds.Contains(id))
                 throw new System.IO.IOException("存在尚未读取的本地便签文件，同步已暂停以保留原始数据。请先处理启动时的数据恢复提示。");
-        return new SyncSnapshot { Notes = Notes.ToDictionary(n => n.Id, n => n), Groups = Groups, Ai = AiSettings.ExportShared() }.Clone();
+        var snapshot = new SyncSnapshot { Notes = Notes.ToDictionary(n => n.Id, n => n), Groups = Groups, Ai = AiSettings.ExportShared() }.Clone();
+        ExcludeVaultSources(snapshot);
+        return snapshot;
     }
 
     public MergeResult ApplySyncedSnapshot(SyncSnapshot captured, SyncSnapshot incoming, CancellationToken token = default)
@@ -329,16 +337,20 @@ public sealed class StickyWorkspace
         using var historyContext = Store.History.WithContext("sync", Guid.NewGuid().ToString("N"));
         token.ThrowIfCancellationRequested();
         var current = CaptureForSync();
+        incoming = incoming.Clone(); ExcludeVaultSources(incoming);
         // Edits made after the first capture own the original editor; incoming competing content becomes a copy.
         var reconciled = SnapshotMerger.Merge(captured, incoming, current);
         var final = reconciled.Snapshot;
+        ExcludeVaultSources(final);
         GitSyncEngine.ValidateSnapshot(final, checkAssets: false);
-        foreach (var bytes in final.Assets.Values) { token.ThrowIfCancellationRequested(); Store.AddImage(bytes); }
+        var usedAssets = final.Notes.Values.SelectMany(n => VaultStore.ImageIds(n.Blocks)).ToHashSet();
+        foreach (var (id, bytes) in final.Assets.Where(p => usedAssets.Contains(p.Key))) { token.ThrowIfCancellationRequested(); Store.AddImage(bytes); }
         Store.SaveGroups(final.Groups);
         Groups.Clear(); Groups.AddRange(final.Groups);
         // Save new conflict copies before changing any existing original, including across crashes/disk errors.
         foreach (var next in final.Notes.Values.OrderBy(n => Notes.Any(existing => existing.Id == n.Id)))
         {
+            if (VaultMigrations.MovedIds.Contains(next.Id)) continue;
             token.ThrowIfCancellationRequested();
             var existing = Notes.FirstOrDefault(n => n.Id == next.Id);
             if (existing is not null && SyncJson.Equal(existing, next)) continue;

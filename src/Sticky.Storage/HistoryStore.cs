@@ -94,8 +94,9 @@ public sealed class HistoryStore
             }
             catch (Exception ex) when (ex is JsonException or InvalidDataException or NoteStore.UnsupportedVersionException) { Warnings.Add("初始历史未包含无法读取的文件：" + relative); }
         }
+        var moved = VaultMigration.ReadMovedIds(_root);
         foreach (var path in Directory.EnumerateFiles(Path.Combine(_root, "notes"), "*.json"))
-            if (Guid.TryParse(Path.GetFileNameWithoutExtension(path), out var id)) Add("notes/" + id + ".json");
+            if (Guid.TryParse(Path.GetFileNameWithoutExtension(path), out var id) && !moved.Contains(id)) Add("notes/" + id + ".json");
         Add("groups.json"); Add("device/windows.json");
         Write("baseline.json", baseline);
     }
@@ -232,6 +233,88 @@ public sealed class HistoryStore
     }
     public void Flush() { using (Lock()) { Initialize(); Recover(); } }
 
+    public List<Note> NoteVersions(Guid id)
+    {
+        using (Lock())
+        {
+            Initialize(); Recover(); _ = ReadTimelineLocked();
+            return Directory.Exists(FilePath("objects")) ? Directory.EnumerateFiles(FilePath("objects"), "*.json")
+                .Select(File.ReadAllBytes).Where(bytes =>
+                {
+                    using var doc = JsonDocument.Parse(bytes);
+                    return doc.RootElement.TryGetProperty("id", out var value) && value.TryGetGuid(out var found) && found == id;
+                }).Select(bytes => NoteStore.ParseNote(bytes, id)).OrderBy(n => n.ModifiedAt).ToList() : [];
+        }
+    }
+
+    // Rebuild only retained documents/events, then swap directories. The old tree is
+    // removed before this method reports success; startup finishes an interrupted swap.
+    public void ForgetNotes(IReadOnlySet<Guid> ids)
+    {
+        RecoverVaultRewrite(_root);
+        EnsureNoLinks(DirectoryPath);
+        var stageRoot = Path.Combine(_root, ".vault-history-stage");
+        var old = Path.Combine(_root, ".vault-history-old");
+        using (Lock())
+        {
+            Initialize(); Recover();
+            var timeline = ReadTimelineLocked();
+            var baseline = Decode<HistoryCheckpoint>(File.ReadAllBytes(FilePath("baseline.json")));
+            bool Retain(string target) => !target.StartsWith("notes/", StringComparison.Ordinal)
+                || !Guid.TryParse(Path.GetFileNameWithoutExtension(target), out var id) || !ids.Contains(id);
+            baseline.Documents = baseline.Documents.Where(p => Retain(p.Key)).ToDictionary();
+            if (Directory.Exists(stageRoot)) Directory.Delete(stageRoot, true);
+            var stage = new HistoryStore(stageRoot);
+            foreach (var hash in baseline.Documents.Values) stage.Object(ReadObject(hash));
+            stage.Write("baseline.json", baseline);
+            long sequence = 0;
+            foreach (var entry in timeline.Events.Where(e => Retain(e.Target)))
+            {
+                if (entry.Before is not null) stage.Object(ReadObject(entry.Before));
+                if (entry.After is not null) stage.Object(ReadObject(entry.After));
+                entry.NoteIds.RemoveAll(ids.Contains); entry.Sequence = ++sequence;
+                stage.Write($"events/{sequence:D20}.json", entry);
+            }
+            stage.Write("head.json", sequence);
+            WorkspaceFiles.WriteAtomic(_root, Path.Combine(stageRoot, "ready"), [49], keepBackup: false);
+        }
+        Directory.Move(DirectoryPath, old);
+        Directory.Move(Path.Combine(stageRoot, "history"), DirectoryPath);
+        Directory.Delete(old, true); Directory.Delete(stageRoot, true);
+        Changed?.Invoke();
+    }
+
+    internal static void RecoverVaultRewrite(string root)
+    {
+        var stage = Path.Combine(root, ".vault-history-stage");
+        var old = Path.Combine(root, ".vault-history-old");
+        var history = Path.Combine(root, "history");
+        if (!Directory.Exists(stage) && !Directory.Exists(old)) return;
+        foreach (var path in new[] { stage, old, history })
+            EnsureNoLinks(path);
+        if (Directory.Exists(old))
+        {
+            if (!Directory.Exists(history))
+            {
+                if (!File.Exists(Path.Combine(stage, "ready"))) throw new IOException("保险箱历史迁移未完成，请保留数据目录并重试。");
+                Directory.Move(Path.Combine(stage, "history"), history);
+            }
+            Directory.Delete(old, true);
+        }
+        if (Directory.Exists(stage)) Directory.Delete(stage, true);
+    }
+
+    internal static void EnsureNoLinks(string path)
+    {
+        if (!Directory.Exists(path)) return;
+        if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0) throw new IOException("保险箱迁移不支持目录或文件链接。");
+        foreach (var child in Directory.EnumerateFileSystemEntries(path))
+        {
+            if ((File.GetAttributes(child) & FileAttributes.ReparsePoint) != 0) throw new IOException("保险箱迁移不支持目录或文件链接。");
+            if (Directory.Exists(child)) EnsureNoLinks(child);
+        }
+    }
+
     // Older app versions and manual backup restoration may change current JSON without history.
     // Observe the difference, never overwrite current data with an old historical projection.
     public void Reconcile()
@@ -245,8 +328,10 @@ public sealed class HistoryStore
             var targets = refs.Keys.Concat(Directory.EnumerateFiles(Path.Combine(_root, "notes"), "*.json")
                 .Where(p => Guid.TryParse(Path.GetFileNameWithoutExtension(p), out _)).Select(p => "notes/" + Guid.Parse(Path.GetFileNameWithoutExtension(p)) + ".json"))
                 .Concat(new[] { "groups.json", "device/windows.json" }).Distinct().ToList();
+            var moved = VaultMigration.ReadMovedIds(_root);
             foreach (var target in targets)
             {
+                if (target.StartsWith("notes/", StringComparison.Ordinal) && Guid.TryParse(Path.GetFileNameWithoutExtension(target), out var movedId) && moved.Contains(movedId)) continue;
                 var path = DataFile(target); var current = File.Exists(path) ? File.ReadAllBytes(path) : null;
                 refs.TryGetValue(target, out var oldHash);
                 if (current is null && oldHash is null || current is not null && Hash(current) == oldHash) continue;
@@ -294,6 +379,7 @@ public sealed class HistoryStore
                         foreach (var path in Directory.EnumerateFiles(directory, pattern)) Add(path, prefix + Path.GetFileName(path));
                     }
                     Add(Path.Combine(_root, "manifest.json"), "manifest.json"); Add(Path.Combine(_root, "groups.json"), "groups.json");
+                    Add(Path.Combine(_root, VaultStore.FileName), VaultStore.FileName);
                     Add(Path.Combine(_root, "device", "windows.json"), "device/windows.json");
                     Folder(Path.Combine(_root, "notes"), "notes/", "*.json"); Folder(Path.Combine(_root, "assets"), "assets/", "*.png");
                     Add(FilePath("baseline.json"), "history/baseline.json"); Add(FilePath("head.json"), "history/head.json");
