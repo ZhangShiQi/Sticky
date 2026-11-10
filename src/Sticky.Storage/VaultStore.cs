@@ -101,6 +101,14 @@ public sealed class VaultStore : IDisposable
     }
 
     public IReadOnlyList<Note> Versions(Guid id) => Require().History.TryGetValue(id, out var versions) ? Clone(versions) : [];
+    public string AddImage(byte[] bytes)
+    {
+        var id = Convert.ToHexStringLower(SHA256.HashData(bytes)) + ".png";
+        var next = Clone(Require());
+        next.Assets[id] = bytes.ToArray();
+        Commit(next);
+        return id;
+    }
     public byte[] ReadImage(string id) => Require().Assets.TryGetValue(id, out var bytes) ? bytes.ToArray() : throw new FileNotFoundException("保险箱中缺少图片。");
     public void Remove(Guid id)
     {

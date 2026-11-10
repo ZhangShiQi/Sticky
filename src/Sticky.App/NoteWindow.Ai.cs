@@ -11,6 +11,7 @@ public partial class NoteWindow
 {
     private void AiPolishClicked(object sender, RoutedEventArgs e)
     {
+        if (_workspace.IsVaultNote(_note.Id)) return;
         try
         {
             var actions = _workspace.AiSettings.EditingCatalog().Actions.Where(a => a.Enabled && a.DeletedAt is null).OrderBy(a => a.Order).ThenBy(a => a.Id).ToList();

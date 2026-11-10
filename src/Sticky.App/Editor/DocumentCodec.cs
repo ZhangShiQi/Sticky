@@ -127,7 +127,7 @@ public static class DocumentCodec
     }
 
     public static FlowDocument Decode(IEnumerable<NoteBlock> blocks, NoteStore store, bool darkTheme = false, EditorPreferences? preferences = null)
-        => Decode(blocks, id => File.OpenRead(store.GetAssetPath(id)), darkTheme, preferences);
+        => Decode(blocks, store.OpenImage, darkTheme, preferences);
 
     public static FlowDocument Decode(IEnumerable<NoteBlock> blocks, Func<string, Stream> readImage, bool darkTheme = false, EditorPreferences? preferences = null)
     {
@@ -206,7 +206,7 @@ public static class DocumentCodec
     }
 
     public static Image CreateImage(string id, double width, NoteStore store)
-        => CreateImage(id, width, asset => File.OpenRead(store.GetAssetPath(asset)));
+        => CreateImage(id, width, store.OpenImage);
 
     public static Image CreateImage(string id, double width, Func<string, Stream> readImage)
     {

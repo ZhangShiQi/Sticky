@@ -9,6 +9,16 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 {
     private readonly StickyWorkspace _workspace;
     private bool _showDeleted;
+    public bool IsVaultSelected { get; private set; }
+    public bool IsVaultUnlocked => _workspace.Vault.IsUnlocked && !_workspace.VaultViewsHidden;
+    public string VaultLockHint => IsVaultUnlocked ? "保险箱已解锁" : "保险箱已锁定";
+    public bool IsVaultLocked => IsVaultSelected && (!_workspace.Vault.IsUnlocked || _workspace.VaultViewsHidden);
+    public bool CanUnlockVault => IsVaultLocked && !_workspace.VaultViewsHidden;
+    public bool CanCreateNote => !IsVaultLocked;
+    public string VaultBackground => IsVaultSelected ? "#DDE4D8" : "Transparent";
+    public void SelectVault() { IsVaultSelected = true; _showDeleted = false; _selectedGroupId = null; _ungroupedOnly = false; Refresh(); }
+    public string VaultTrashLabel => ShowDeleted ? "返回保险箱" : "私密回收站";
+    public void ToggleVaultTrash() { if (!IsVaultSelected || IsVaultLocked) return; _showDeleted = !_showDeleted; Refresh(); }
     private bool _ungroupedOnly;
     private Guid? _selectedGroupId;
     private readonly ResettableCollection<NoteCard> _cards = new();
@@ -26,19 +36,19 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     public double CardCellHeight => _titleView ? 52 : 242;
     public event PropertyChangedEventHandler? PropertyChanged;
 
-    public bool ShowDeleted { get => _showDeleted; set { _showDeleted = value; if (value) { _selectedGroupId = null; _ungroupedOnly = false; } Refresh(); } }
+    public bool ShowDeleted { get => _showDeleted; set { IsVaultSelected = false; _showDeleted = value; if (value) { _selectedGroupId = null; _ungroupedOnly = false; } Refresh(); } }
     public Guid? SelectedGroupId => _selectedGroupId;
     public bool HasSelectedGroup => _selectedGroupId.HasValue && !ShowDeleted;
-    public string AllBackground => !ShowDeleted && !_ungroupedOnly && _selectedGroupId is null ? "#DDE4D8" : "Transparent";
+    public string AllBackground => !IsVaultSelected && !ShowDeleted && !_ungroupedOnly && _selectedGroupId is null ? "#DDE4D8" : "Transparent";
     public string UngroupedBackground => !ShowDeleted && _ungroupedOnly ? "#DDE4D8" : "Transparent";
-    public string TrashBackground => ShowDeleted ? "#DDE4D8" : "Transparent";
-    public string Heading => ShowDeleted ? "回收站" : _ungroupedOnly ? "未分组" : _selectedGroupId is { } id ? _workspace.GroupName(id) : "我的便签";
-    public string Subtitle => ShowDeleted ? "删除的便签仍在这里，随时可以恢复。" : "随手记录，让想法有处安放。";
+    public string TrashBackground => !IsVaultSelected && ShowDeleted ? "#DDE4D8" : "Transparent";
+    public string Heading => IsVaultSelected ? (ShowDeleted ? "保险箱 · 回收站" : "保险箱") : ShowDeleted ? "回收站" : _ungroupedOnly ? "未分组" : _selectedGroupId is { } id ? _workspace.GroupName(id) : "我的便签";
+    public string Subtitle => IsVaultSelected && _workspace.VaultViewsHidden ? "保存失败，内容已隐藏；正在重试保存并锁定。" : IsVaultSelected ? (IsVaultLocked ? "输入主密码后查看私密便签。" : "已解锁 · 便签自动加密保存。") : ShowDeleted ? "删除的便签仍在这里，随时可以恢复。" : "随手记录，让想法有处安放。";
     public string Summary => $"{_activeCount} 张便签 · {_workspace.Windows.Count} 个窗口已打开";
     public string ResultCount => $"{Cards.Count} 张便签";
     public bool IsEmpty => Cards.Count == 0;
-    public string EmptyTitle => ShowDeleted ? "回收站是空的" : "这里还没有便签";
-    public string EmptyDescription => ShowDeleted ? "移入回收站的便签会显示在这里。" : "点击右上角「新建便签」，开始记录。";
+    public string EmptyTitle => IsVaultSelected && _workspace.VaultViewsHidden ? "正在重试保存并锁定" : IsVaultLocked ? "保险箱已锁定" : ShowDeleted ? "回收站是空的" : "这里还没有便签";
+    public string EmptyDescription => IsVaultSelected && _workspace.VaultViewsHidden ? "未保存的编辑仍保留在内存中，请勿强制退出程序。" : IsVaultLocked ? "点击上方「解锁保险箱」查看内容。" : ShowDeleted ? "移入回收站的便签会显示在这里。" : "点击右上角「新建便签」，开始记录。";
 
     public MainViewModel(StickyWorkspace workspace)
     {
@@ -54,14 +64,16 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         var groupObjects = _workspace.Groups.ToDictionary(g => g.Id);
         var groupNames = groupObjects.ToDictionary(g => g.Key, g => g.Value.Name);
         var counts = new Dictionary<Guid, int>(); var live = new HashSet<Guid>(); var next = new List<NoteCard>();
+        foreach (var ordinary in _workspace.Notes.Where(n => n.DeletedAt is null && n.GroupId.HasValue))
+            counts[ordinary.GroupId!.Value] = counts.GetValueOrDefault(ordinary.GroupId.Value) + 1;
         _activeCount = 0;
-        foreach (var note in _workspace.Notes)
+        foreach (var note in IsVaultSelected ? (IsVaultLocked ? [] : _workspace.PrivateNotes) : _workspace.Notes)
         {
             live.Add(note.Id);
-            if (note.DeletedAt is null) { _activeCount++; if (note.GroupId is Guid groupId) counts[groupId] = counts.GetValueOrDefault(groupId) + 1; }
-            if ((note.DeletedAt is not null) != ShowDeleted || !ShowDeleted && (_ungroupedOnly ? note.GroupId is not null : _selectedGroupId is not null && note.GroupId != _selectedGroupId)) continue;
+            if (note.DeletedAt is null) _activeCount++;
+            if ((note.DeletedAt is not null) != ShowDeleted || !IsVaultSelected && !ShowDeleted && (_ungroupedOnly ? note.GroupId is not null : _selectedGroupId is not null && note.GroupId != _selectedGroupId)) continue;
             if (!_cardCache.TryGetValue(note.Id, out var card) || !ReferenceEquals(card.Note, note)) _cardCache[note.Id] = card = new NoteCard(note, false);
-            card.Update(_workspace.Windows.ContainsKey(note.Id), note.GroupId is Guid id && groupNames.TryGetValue(id, out var name) ? name : "未分组");
+            card.Update(_workspace.Windows.ContainsKey(note.Id), IsVaultSelected ? "保险箱" : note.GroupId is Guid id && groupNames.TryGetValue(id, out var name) ? name : "未分组");
             next.Add(card);
         }
         foreach (var id in _cardCache.Keys.Where(id => !live.Contains(id)).ToArray()) _cardCache.Remove(id);
@@ -72,7 +84,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             _groupSnapshot = groups;
             _groups.Replace(groups.Select(g => new GroupItem(groupObjects[g.Id], g.Item3, g.Item4)).ToList());
         }
-        foreach (var property in new[] { nameof(Heading), nameof(Subtitle), nameof(Summary), nameof(ResultCount), nameof(IsEmpty), nameof(EmptyTitle), nameof(EmptyDescription), nameof(ShowDeleted), nameof(HasSelectedGroup), nameof(AllBackground), nameof(UngroupedBackground), nameof(TrashBackground) })
+        foreach (var property in new[] { nameof(IsVaultUnlocked), nameof(VaultLockHint), nameof(VaultTrashLabel), nameof(IsVaultSelected), nameof(IsVaultLocked), nameof(CanCreateNote), nameof(CanUnlockVault), nameof(VaultBackground), nameof(Heading), nameof(Subtitle), nameof(Summary), nameof(ResultCount), nameof(IsEmpty), nameof(EmptyTitle), nameof(EmptyDescription), nameof(ShowDeleted), nameof(HasSelectedGroup), nameof(AllBackground), nameof(UngroupedBackground), nameof(TrashBackground) })
             OnPropertyChanged(property);
     }
 
@@ -85,6 +97,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
     public void SelectGroup(Guid? id, bool ungroupedOnly = false)
     {
+        IsVaultSelected = false;
         _selectedGroupId = id; _ungroupedOnly = ungroupedOnly; _showDeleted = false; Refresh();
     }
 

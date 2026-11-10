@@ -51,7 +51,7 @@ public partial class NoteWindow : Window
         InitializeComponent();
         TitleBox.Text = note.Title;
         ApplyTheme();
-        Editor.Document = DocumentCodec.Decode(note.Blocks, workspace.Store, darkTheme: true, workspace.EditorPreferences);
+        Editor.Document = DocumentCodec.Decode(note.Blocks, workspace.StoreFor(note), darkTheme: true, workspace.EditorPreferences);
         Editor.ContextMenu = BuildNoteMenu();
         AttachImageMenus();
         Width = FiniteClamp(state.Width, 280, 1200, 390);
@@ -79,6 +79,25 @@ public partial class NoteWindow : Window
         InputBindings.Add(new KeyBinding(ApplicationCommands.Find, Key.F, ModifierKeys.Control));
         // Cancel WPF's default XAML/RTF import. Only text and normalized raster images enter the document.
         DataObject.AddPastingHandler(Editor, (_, e) => { e.CancelCommand(); PasteClipboard(); });
+        if (workspace.IsVaultNote(note.Id))
+        {
+            PrivateLockIcon.Visibility = Visibility.Visible;
+            AiButton.Visibility = Visibility.Collapsed;
+            CommandManager.AddPreviewExecutedHandler(Editor, (_, e) =>
+            {
+                if (e.Command != ApplicationCommands.Copy && e.Command != ApplicationCommands.Cut) return;
+                e.Handled = true;
+                if (Editor.Selection.IsEmpty) return;
+                try
+                {
+                    workspace.EnsureVaultController().CopyPrivateText(Editor.Selection.Text);
+                    if (e.Command == ApplicationCommands.Cut && !Editor.IsReadOnly) Editor.Selection.Text = "";
+                }
+                catch (ExternalException) { SaveStatus.Text = "剪贴板忙，请重试。"; }
+            });
+            PreviewKeyDown += (_, _) => workspace.TouchVault();
+            PreviewMouseDown += (_, _) => workspace.TouchVault();
+        }
         _loading = false;
         MouseEnter += (_, _) => { _pointerOver = true; UpdateHeaderState(); };
         MouseLeave += (_, _) => { _pointerOver = false; UpdateHeaderState(); };
@@ -118,7 +137,7 @@ public partial class NoteWindow : Window
         try
         {
             TitleBox.Text = _note.Title; _color = _note.Color;
-            if (reloadBody) { Editor.Document = DocumentCodec.Decode(_note.Blocks, _workspace.Store, darkTheme: true, _workspace.EditorPreferences); AttachImageMenus(); }
+            if (reloadBody) { Editor.Document = DocumentCodec.Decode(_note.Blocks, _workspace.StoreFor(_note), darkTheme: true, _workspace.EditorPreferences); AttachImageMenus(); }
             ApplyTheme(); _dirty = false;
             SaveStatus.Text = status; SaveIndicator.Content = "✓"; UpdateCounters();
         }
@@ -228,12 +247,12 @@ public partial class NoteWindow : Window
             _note.Title = TitleBox.Text;
             _note.Color = _color;
             _note.ModifiedAt = DateTimeOffset.UtcNow;
-            using (var history = _workspace.Store.History.WithContext("local", _historyBatch, historyReason)) _workspace.Store.Save(_note);
+            using (var history = _workspace.StoreFor(_note).History.WithContext("local", _historyBatch, historyReason)) _workspace.StoreFor(_note).Save(_note);
             _dirty = false;
             SaveStatus.Text = "已保存 · " + DateTime.Now.ToString("HH:mm:ss");
             SaveStatus.Foreground = Brush("#526B4C");
             SaveIndicator.Content = "✓";
-            SaveStatus.ToolTip = _workspace.Store.Root;
+            SaveStatus.ToolTip = _workspace.StoreFor(_note).Root;
             UpdateTitle();
             _workspace.NotifyChanged();
             return true;
@@ -253,6 +272,18 @@ public partial class NoteWindow : Window
         }
     }
 
+    public void HidePrivateContent()
+    {
+        foreach (Window dialog in OwnedWindows.Cast<Window>().ToArray()) dialog.Close();
+        Hide();
+    }
+    public void ClearPrivateContent()
+    {
+        _loading = true;
+        _imageViewer?.Close();
+        Editor.Document = new FlowDocument();
+        TitleBox.Clear(); HeaderTitle.Text = ""; Title = "Sticky";
+    }
     public void CaptureWindowState()
     {
         var bounds = WindowState == System.Windows.WindowState.Normal ? new Rect(Left, Top, Width, Height) : RestoreBounds;
@@ -337,7 +368,7 @@ public partial class NoteWindow : Window
             Add("编辑便签    F2", EnterEditMode);
             Add("完成编辑    Esc", FinishEditing);
             Add("修改标题…", RenameTitle);
-            var move = new MenuItem { Header = "移动到分组 · " + _workspace.GroupName(_note.GroupId) };
+            var move = new MenuItem { Header = _workspace.IsVaultNote(_note.Id) ? "保险箱" : "移动到分组 · " + _workspace.GroupName(_note.GroupId) };
             NoteMenus.FillMoveItems(move.Items, _workspace, _note); menu.Items.Add(move);
             var colors = new MenuItem { Header = "便签颜色" };
             foreach (var (label, key) in NotePalette.Choices)
@@ -387,7 +418,7 @@ public partial class NoteWindow : Window
         }
         finally { _modalDepth--; }
     }
-    private void CreateNearbyNote() => _workspace.CreateNote(_note.GroupId, this);
+    private void CreateNearbyNote() { if (_workspace.IsVaultNote(_note.Id)) _workspace.CreateVaultNote(this); else _workspace.CreateNote(_note.GroupId, this); }
     private void NewNote(object sender, RoutedEventArgs e) => CreateNearbyNote();
     private void ManualSave(object sender, RoutedEventArgs e) => SaveNow();
     private void CloseNote(object sender, RoutedEventArgs e) => Close();
@@ -429,8 +460,8 @@ public partial class NoteWindow : Window
     private void InsertBitmap(System.Windows.Media.Imaging.BitmapSource bitmap)
     {
         EnterEditMode();
-        var id = DocumentCodec.StoreBitmap(bitmap, _workspace.Store);
-        var image = DocumentCodec.CreateImage(id, Math.Min(280, bitmap.PixelWidth), _workspace.Store);
+        var id = DocumentCodec.StoreBitmap(bitmap, _workspace.StoreFor(_note));
+        var image = DocumentCodec.CreateImage(id, Math.Min(280, bitmap.PixelWidth), _workspace.StoreFor(_note));
         Editor.BeginChange();
         try
         {

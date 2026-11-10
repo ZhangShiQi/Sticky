@@ -19,10 +19,9 @@ public partial class ImageViewerWindow : Window
 
     public ImageViewerWindow(NoteStore store, string assetId)
     {
-        var path = store.GetAssetPath(assetId);
-        if (new FileInfo(path).Length > 20 * 1024 * 1024) throw new InvalidDataException("图片超过 20 MB，无法预览。");
-        using (var stream = File.OpenRead(path))
+        using (var stream = store.OpenImage(assetId))
         {
+            if (stream.Length > 20 * 1024 * 1024) throw new InvalidDataException("图片超过 20 MB，无法预览。");
             var decoder = BitmapDecoder.Create(stream, BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnDemand);
             if ((long)decoder.Frames[0].PixelWidth * decoder.Frames[0].PixelHeight > 100_000_000) throw new InvalidDataException("图片尺寸过大，无法预览。");
             stream.Position = 0;

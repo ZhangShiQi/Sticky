@@ -86,7 +86,7 @@ public sealed partial class StickyWorkspace
     {
         var note = new Note { GroupId = groupId,
             Color = EditorPreferences.RandomizeNewNoteColor ? NotePalette.Choices[Random.Shared.Next(NotePalette.Choices.Count)].Key : "amber" };
-        try { Store.Save(note); }
+        try { StoreFor(note).Save(note); }
         catch (Exception ex) { ShowError("无法创建便签", ex); return; }
         Notes.Insert(0, note);
         NotifyChanged();
@@ -95,7 +95,7 @@ public sealed partial class StickyWorkspace
 
     public void OpenNote(Note note, bool edit = false, NoteWindow? near = null)
     {
-        if (note.DeletedAt is not null) return;
+        if (note.DeletedAt is not null || IsVaultNote(note.Id) && (!Vault.IsUnlocked || VaultViewsHidden)) return;
         if (Windows.TryGetValue(note.Id, out var existing))
         {
             if (existing.WindowState == System.Windows.WindowState.Minimized) existing.WindowState = System.Windows.WindowState.Normal;
@@ -116,6 +116,7 @@ public sealed partial class StickyWorkspace
 
     public WindowState GetWindowState(Guid id)
     {
+        if (IsVaultNote(id)) return VaultWindowState(id);
         if (!Device.Windows.TryGetValue(id, out var state))
         {
             var offset = Windows.Count % 7 * 30;
@@ -137,7 +138,7 @@ public sealed partial class StickyWorkspace
         var previousModified = note.ModifiedAt;
         note.DeletedAt = DateTimeOffset.UtcNow;
         note.ModifiedAt = DateTimeOffset.UtcNow;
-        try { Store.Save(note); }
+        try { StoreFor(note).Save(note); }
         catch (Exception ex)
         {
             note.DeletedAt = previous;
@@ -155,7 +156,7 @@ public sealed partial class StickyWorkspace
         var modified = note.ModifiedAt;
         note.DeletedAt = null;
         note.ModifiedAt = DateTimeOffset.UtcNow;
-        try { Store.Save(note); }
+        try { StoreFor(note).Save(note); }
         catch (Exception ex) { note.DeletedAt = deleted; note.ModifiedAt = modified; ShowError("无法恢复便签", ex); return; }
         NotifyChanged();
         OpenNote(note);
@@ -218,6 +219,7 @@ public sealed partial class StickyWorkspace
 
     public void ShowHistory(Guid? noteId = null)
     {
+        if (noteId is { } privateId && IsVaultNote(privateId)) { EnsureVaultController().ShowNoteHistory(privateId); return; }
         if (!SaveAllNotes()) return;
         try
         {
@@ -401,7 +403,7 @@ public sealed partial class StickyWorkspace
         var modified = note.ModifiedAt;
         note.GroupId = groupId;
         note.ModifiedAt = DateTimeOffset.UtcNow;
-        try { Store.Save(note); }
+        try { StoreFor(note).Save(note); }
         catch (Exception ex) { note.GroupId = previous; note.ModifiedAt = modified; ShowError("无法移动便签", ex); return false; }
         NotifyChanged();
         return true;

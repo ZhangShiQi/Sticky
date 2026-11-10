@@ -52,7 +52,7 @@ try {
         throw 'STICKY_TEST_FILTER must be empty for a release: the complete test suite is required.'
     }
     foreach ($required in @('scripts/publish-release.ps1', 'CHANGELOG.md', 'Directory.Build.props', 'scripts/package-portable.ps1',
-        'scripts/test-portable-update.ps1', 'src/Sticky.Launcher/Sticky.Launcher.csproj', 'src/Sticky.UpdateEngine/Sticky.UpdateEngine.csproj')) {
+        'scripts/test-portable-update.ps1', 'scripts/test-vault.ps1', 'src/Sticky.Launcher/Sticky.Launcher.csproj', 'src/Sticky.UpdateEngine/Sticky.UpdateEngine.csproj')) {
         Read-Git @('cat-file', '-e', "HEAD:$required") | Out-Null
     }
     $head = (Read-Git @('rev-parse', 'HEAD')) -join ''
@@ -92,6 +92,7 @@ try {
     & (Join-Path $PSScriptRoot 'test-publish-release.ps1')
     & (Join-Path $PSScriptRoot 'test-package-archive.ps1')
     & (Join-Path $projectRoot 'test.ps1') -ArtifactsPath (Join-Path $outputRoot 'test-build') -NativeCapture
+    & (Join-Path $PSScriptRoot 'test-vault.ps1') -TestAssembly (Join-Path $outputRoot 'test-build\bin\Sticky.Tests\release\Sticky.Tests.dll') -OutputDirectory (Join-Path $outputRoot 'vault-validation')
     $outputDirectory = Join-Path $outputRoot "Sticky-$Version-win-x64-portable"
     & (Join-Path $PSScriptRoot 'package-portable.ps1') -OutputDirectory $outputDirectory
     $package = $outputDirectory + '.zip'

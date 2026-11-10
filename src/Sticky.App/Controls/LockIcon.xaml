@@ -1,0 +1,23 @@
+<UserControl x:Class="Sticky.App.Controls.LockIcon"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Name="Root" Width="16" Height="16" Focusable="False" IsHitTestVisible="False">
+  <Viewbox>
+    <Canvas Width="24" Height="24">
+      <Path Stroke="{Binding Foreground, ElementName=Root}" StrokeThickness="1.8" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round">
+        <Path.Style>
+          <Style TargetType="Path">
+            <Setter Property="Data" Value="M7,10 L7,7 A5,5 0 0 1 17,7 L17,10"/>
+            <Style.Triggers>
+              <DataTrigger Binding="{Binding IsUnlocked, ElementName=Root}" Value="True">
+                <Setter Property="Data" Value="M7,10 L7,7 A5,5 0 0 1 17,7"/>
+              </DataTrigger>
+            </Style.Triggers>
+          </Style>
+        </Path.Style>
+      </Path>
+      <Path Data="M6,10 L18,10 Q20,10 20,12 L20,20 Q20,22 18,22 L6,22 Q4,22 4,20 L4,12 Q4,10 6,10 Z M12,15 L12,18"
+            Stroke="{Binding Foreground, ElementName=Root}" StrokeThickness="1.8" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"/>
+    </Canvas>
+  </Viewbox>
+</UserControl>

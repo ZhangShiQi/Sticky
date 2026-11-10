@@ -17,6 +17,9 @@ public sealed partial class NoteStore
         MaxDepth = 48
     };
 
+    private readonly VaultStore? _vault;
+    public NoteStore(string root, VaultStore vault) : this(root) => _vault = vault;
+    public Stream OpenImage(string id) => _vault is null ? File.OpenRead(GetAssetPath(id)) : new MemoryStream(_vault.ReadImage(id), false);
     public string Root { get; }
     public string NotesDirectory => Path.Combine(Root, "notes");
     public string AssetsDirectory => Path.Combine(Root, "assets");
@@ -99,6 +102,7 @@ public sealed partial class NoteStore
     public void Save(Note note)
     {
         Validate(note);
+        if (_vault is not null) { _vault.Save(note); return; }
         if ((note.Title.Length != 0 || note.Blocks.Count != 0 || note.DeletedAt is null) && new VaultMigration(this).MovedIds.Contains(note.Id))
             throw new InvalidOperationException("此便签已移入保险箱，不能将旧版本恢复为明文；请使用保险箱。需要明文副本时请从保险箱移出。");
         var bytes = JsonSerializer.SerializeToUtf8Bytes(note, JsonOptions);
@@ -139,6 +143,7 @@ public sealed partial class NoteStore
 
     public string AddImage(byte[] pngBytes)
     {
+        if (_vault is not null) return _vault.AddImage(pngBytes);
         var id = Convert.ToHexStringLower(SHA256.HashData(pngBytes)) + ".png";
         var path = GetAssetPath(id);
         if (!File.Exists(path)) AtomicWrite(path, pngBytes, keepBackup: false);

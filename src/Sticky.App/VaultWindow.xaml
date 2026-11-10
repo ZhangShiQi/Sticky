@@ -1,7 +1,7 @@
 <Window x:Class="Sticky.App.VaultWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Sticky · 保险箱" Width="1000" Height="700" MinWidth="800" MinHeight="520"
+        Title="Sticky · 保险箱设置" Width="740" Height="260" MinWidth="640" MinHeight="220"
         Background="#F8F8F6" WindowStartupLocation="CenterOwner">
   <Grid Margin="24">
     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
@@ -17,36 +17,6 @@
         <Button x:Name="PasswordButton" Content="修改主密码…" Click="PasswordClicked"/>
       </WrapPanel>
     </StackPanel>
-    <StackPanel x:Name="LockedHint" Grid.Row="1" HorizontalAlignment="Center" VerticalAlignment="Center">
-      <TextBlock Text="🔒" FontSize="42" HorizontalAlignment="Center" Margin="0,0,0,16"/>
-      <TextBlock Text="私密内容已锁定" FontSize="22" HorizontalAlignment="Center"/>
-      <TextBlock Text="解锁后查看便签，或导入另一台电脑导出的加密保险箱。" Margin="0,12,0,0" Foreground="#657064"/>
-    </StackPanel>
-    <Grid x:Name="UnlockedPanel" Grid.Row="1" Margin="0,18,0,12" Visibility="Collapsed">
-      <Grid.ColumnDefinitions><ColumnDefinition Width="230"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-      <DockPanel Margin="0,0,18,0">
-        <Button DockPanel.Dock="Top" Content="＋ 新建私密便签" Click="NewClicked"/>
-        <CheckBox x:Name="ShowTrash" DockPanel.Dock="Top" Content="查看保险箱回收站" Margin="4,12" Click="TrashClicked"/>
-        <ListBox x:Name="NoteList" DisplayMemberPath="DisplayTitle" SelectionChanged="SelectionChanged"/>
-      </DockPanel>
-      <Grid Grid.Column="1" x:Name="EditorPanel" IsEnabled="False">
-        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-        <TextBox x:Name="TitleBox" MaxLength="500" Padding="10" FontSize="18" TextChanged="Edited" ToolTip="便签标题"/>
-        <WrapPanel Grid.Row="1" Margin="0,8">
-          <Button Content="加粗" Command="EditingCommands.ToggleBold" CommandTarget="{Binding ElementName=Editor}"/>
-          <Button Content="斜体" Command="EditingCommands.ToggleItalic" CommandTarget="{Binding ElementName=Editor}"/>
-          <Button Content="插入图片…" Click="ImageClicked"/>
-          <Button Content="复制选中文字" Click="CopyClicked" ToolTip="约 30 秒后尝试清空本应用复制的剪贴板文字"/>
-        </WrapPanel>
-        <RichTextBox x:Name="Editor" Grid.Row="2" Padding="12" VerticalScrollBarVisibility="Auto" AcceptsTab="True" TextChanged="Edited"/>
-        <WrapPanel Grid.Row="3" Margin="0,10,0,0">
-          <Button Content="保存  Ctrl+S" Click="SaveClicked"/>
-          <Button x:Name="DeleteButton" Content="移入回收站" Click="DeleteClicked"/>
-          <Button Content="历史版本…" Click="HistoryClicked"/>
-          <Button Content="移出为普通便签…" Click="MoveOutClicked"/>
-        </WrapPanel>
-      </Grid>
-    </Grid>
-    <TextBlock Grid.Row="2" Text="私密内容仅在解锁时显示；闲置 5 分钟、系统锁屏或关闭此窗口后锁定。保险箱不参与普通搜索、AI 或 Git 同步。" TextWrapping="Wrap" FontSize="12" Foreground="#657064"/>
+    <TextBlock Grid.Row="2" Text="私密内容仅在解锁时显示；闲置 5 分钟、系统锁屏或退出程序后锁定。保险箱不参与普通搜索、AI 或 Git 同步。" TextWrapping="Wrap" FontSize="12" Foreground="#657064"/>
   </Grid>
 </Window>

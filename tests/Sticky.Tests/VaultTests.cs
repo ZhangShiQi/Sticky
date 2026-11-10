@@ -13,6 +13,27 @@ using Sticky.Sync.Git;
 
 internal static partial class Program
 {
+    private static int VaultReleaseChecks(string root)
+    {
+        // Explicit invocation prevents STICKY_TEST_FILTER from skipping the release gate.
+        _root = Path.GetFullPath(root); Directory.CreateDirectory(_root);
+        var app = new App { StartWorkspaceOnStartup = false }; app.InitializeComponent();
+        app.ShutdownMode = ShutdownMode.OnExplicitShutdown;
+        var checks = new (string Name, Action Execute)[]
+        {
+            ("portable-password-recovery", VaultPortability), ("tampering-and-failed-writes", VaultTampering),
+            ("plaintext-migration-and-sync-exclusion", VaultMigrationCleanup), ("shared-ui-lock-and-icons", VaultUiLock),
+            ("interrupted-migration", VaultInterruptedMigration)
+        };
+        var results = new List<object>(); var failed = false;
+        foreach (var check in checks)
+        {
+            try { check.Execute(); results.Add(new { check.Name, Passed = true }); Console.WriteLine("PASS vault release: " + check.Name); }
+            catch (Exception ex) { failed = true; results.Add(new { check.Name, Passed = false }); Console.WriteLine("FAIL vault release: " + check.Name + "\n" + ex); }
+        }
+        File.WriteAllText(Path.Combine(_root, "vault-release-results.json"), JsonSerializer.Serialize(results, new JsonSerializerOptions { WriteIndented = true }));
+        app.Shutdown(); return failed ? 1 : 0;
+    }
     private const string VaultPassword = "独立的保险箱口令-2026-Testing!";
     private static void VaultPortability()
     {
@@ -122,31 +143,61 @@ internal static partial class Program
         var workspace = new StickyWorkspace(Path.Combine(_root, "vault-ui")); workspace.Vault.Create(VaultPassword);
         var note = new Note { Title = "测试私密便签", Blocks = [new NoteBlock { Inlines = [new NoteInline { Text = "private-ui-body" }] }] };
         workspace.Vault.Save(note);
-        workspace.ShowVault(); var window = workspace.VaultWindow!; window.RefreshNotes(note.Id); Pump(30);
-        var editor = (RichTextBox)window.FindName("Editor"); var title = (TextBox)window.FindName("TitleBox");
+        workspace.ShowVault(); var controller = workspace.VaultWindow!; workspace.RefreshPrivateNotes();
+        var manager = workspace.Manager!; var model = (Sticky.App.ViewModels.MainViewModel)manager.DataContext;
         try
         {
+            Check(model.IsVaultSelected && model.Cards.Count == 1 && !controller.IsVisible, "Vault did not use the shared manager.");
+            var current = workspace.PrivateNotes.Single(); workspace.OpenNote(current, true); Pump(30);
+            var window = workspace.Windows[current.Id];
+            var lockIcon = (Sticky.App.Controls.LockIcon)window.FindName("PrivateLockIcon");
+            Check(model.IsVaultUnlocked && lockIcon.IsUnlocked && lockIcon.Visibility == Visibility.Visible, "Unlocked vault/header icon missing.");
+            var editor = (RichTextBox)window.FindName("Editor"); var title = (TextBox)window.FindName("TitleBox");
             title.Text = "已保存的私密标题"; new TextRange(editor.Document.ContentStart, editor.Document.ContentEnd).Text = "更新后的私密内容";
-            Check(window.SaveCurrent(), "Private editor save failed.");
-            ManagerScreenshot(window, "vault-unlocked.png");
-            Check(window.LockVault() && !workspace.Vault.IsUnlocked && title.Text.Length == 0 && ((ListBox)window.FindName("NoteList")).Items.Count == 0
-                && string.IsNullOrWhiteSpace(new TextRange(editor.Document.ContentStart, editor.Document.ContentEnd).Text), "Lock retained visible secrets.");
-            ManagerScreenshot(window, "vault-locked.png");
-            Check(workspace.Notes.Count == 0 && workspace.CaptureForSync().Notes.Count == 0, "Private notes leaked to ordinary workspace/sync.");
-            workspace.Vault.Unlock(VaultPassword); window.RefreshNotes(note.Id);
-            Check(title.Text == "已保存的私密标题" && new TextRange(editor.Document.ContentStart, editor.Document.ContentEnd).Text.Contains("更新后的私密内容"), "Unlock lost private editor changes.");
+            Check(window.SaveNow(false), "Shared private editor save failed.");
+            var bitmap = new System.Windows.Media.Imaging.RenderTargetBitmap(24, 24, 96, 96, System.Windows.Media.PixelFormats.Pbgra32);
+            var asset = Sticky.App.Editor.DocumentCodec.StoreBitmap(bitmap, workspace.StoreFor(current));
+            var picture = Sticky.App.Editor.DocumentCodec.CreateImage(asset, 24, workspace.StoreFor(current));
+            editor.Document.Blocks.Add(new Paragraph(new InlineUIContainer(picture)));
+            Check(window.SaveNow(false) && picture.Source is not null && !File.Exists(workspace.Store.GetAssetPath(asset)), "Private image was not encrypted/in-memory.");
+            using (var stream = workspace.StoreFor(current).OpenImage(asset)) Check(stream.Length > 0, "Private image stream missing.");
+            var viewer = new ImageViewerWindow(workspace.StoreFor(current), asset) { Owner = window }; viewer.Show();
+            Check(((System.Windows.Media.Imaging.BitmapSource)((Image)viewer.FindName("PreviewImage")).Source).PixelWidth == 24, "Shared viewer did not decode private image.");
+            viewer.Close();
+            workspace.RefreshPrivateNotes();
+            Check(ReferenceEquals(current, workspace.PrivateNotes.Single()), "Refresh detached the open editor from the card.");
+            ManagerScreenshot(manager, "vault-unlocked.png"); ManagerScreenshot(window, "vault-note.png");
+            model.ToggleView(); Check(model.IsTitleView && model.Cards.Count == 1, "Private title view failed."); model.ToggleView();
+            workspace.Delete(current); model.ToggleVaultTrash();
+            Check(model.Cards.Count == 1 && model.ShowDeleted, "Private trash did not use shared cards.");
+            workspace.Restore(current); model.ToggleVaultTrash();
+            window = workspace.Windows[current.Id]; editor = (RichTextBox)window.FindName("Editor"); title = (TextBox)window.FindName("TitleBox");
+            Check(controller.LockVault() && !workspace.Vault.IsUnlocked && model.Cards.Count == 0 && !window.IsVisible
+                && string.IsNullOrWhiteSpace(new TextRange(editor.Document.ContentStart, editor.Document.ContentEnd).Text), "Lock retained private views.");
+            Check(!model.IsVaultUnlocked && model.IsVaultLocked, "Locked vault retained the unlocked icon state.");
+            ManagerScreenshot(manager, "vault-locked.png");
+            manager.Width = 820; manager.UpdateLayout(); ManagerScreenshot(manager, "vault-locked-narrow.png");
+            manager.Width = 1080;
+            workspace.OpenNote(current);
+            Check(workspace.Windows.Count == 0 && workspace.Notes.Count == 0 && workspace.CaptureForSync().Notes.Count == 0, "Private notes leaked to normal workspace/sync or reopened while locked.");
+            workspace.Vault.Unlock(VaultPassword); workspace.RefreshPrivateNotes(); current = workspace.PrivateNotes.Single(); workspace.OpenNote(current, true);
+            window = workspace.Windows[current.Id]; editor = (RichTextBox)window.FindName("Editor"); title = (TextBox)window.FindName("TitleBox");
+            Check(title.Text == "已保存的私密标题" && new TextRange(editor.Document.ContentStart, editor.Document.ContentEnd).Text.Contains("更新后的私密内容"), "Unlock lost changes.");
             title.Text = "写入失败后仍需保留的编辑";
             using (var exclusive = new FileStream(workspace.Vault.FilePath, FileMode.Open, FileAccess.Read, FileShare.None))
+                Check(!controller.LockVault() && workspace.Vault.IsUnlocked && !window.IsVisible && model.Cards.Count == 0, "Failed save discarded edits or exposed secrets.");
+            Check(controller.LockVault(), "Lock retry failed.");
+            workspace.Vault.Unlock(VaultPassword); workspace.RefreshPrivateNotes();
+            Check(workspace.PrivateNotes.Single().Title == "写入失败后仍需保留的编辑", "Retry lost edits.");
+            workspace.CreateVaultNote(); Check(workspace.PrivateNotes.Count == 2 && workspace.Notes.Count == 0, "Private new note escaped vault.");
+            foreach (var file in Directory.EnumerateFiles(workspace.Store.Root, "*", SearchOption.AllDirectories).Where(p => !p.EndsWith("writer.lock")))
             {
-                Check(!window.LockVault() && workspace.Vault.IsUnlocked && ((Grid)window.FindName("UnlockedPanel")).Visibility == Visibility.Collapsed,
-                    "Failed lock lost edits, exposed the editor or reported a successful lock.");
+                var text = Encoding.UTF8.GetString(File.ReadAllBytes(file));
+                Check(!text.Contains("写入失败后仍需保留") && !text.Contains("更新后的私密内容"), "Plaintext leaked to " + file);
             }
-            Check(window.LockVault(), "Lock did not recover after the file became writable.");
-            workspace.Vault.Unlock(VaultPassword); window.RefreshNotes(note.Id);
-            Check(title.Text == "写入失败后仍需保留的编辑", "Lock retry lost unsaved edits.");
-            typeof(VaultWindow).GetField("_lastInput", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.SetValue(window, DateTimeOffset.UtcNow.AddMinutes(-6));
-            Pump(2300);
-            Check(!workspace.Vault.IsUnlocked && title.Text.Length == 0, "Idle timer failed to lock and clear private views.");
+            Check(workspace.Device.Windows.Count == 0, "Private windows leaked to startup layout.");
+            typeof(VaultWindow).GetField("_lastInput", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.SetValue(controller, DateTimeOffset.UtcNow.AddMinutes(-6));
+            Pump(2300); Check(!workspace.Vault.IsUnlocked && model.Cards.Count == 0, "Idle lock failed.");
         }
         finally { workspace.PrepareExit(); }
     }

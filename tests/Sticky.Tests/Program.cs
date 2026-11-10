@@ -25,6 +25,7 @@ internal static partial class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        if (args.Length == 2 && args[0] == "--vault-release-check") return VaultReleaseChecks(args[1]);
         if (args.Length >= 3 && args[0] == "--instance-probe") return InstanceProbe(args);
         if (args.Length == 2 && args[0] == "--update-ui-context-probe") return UpdateUiContextProbe(args[1]);
         if (args.Length >= 5 && args[0] == "--launcher-worker") return LauncherWorker(args);

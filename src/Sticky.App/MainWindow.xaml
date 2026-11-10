@@ -11,7 +11,7 @@
       <Border Background="{Binding Background}" CornerRadius="12" Width="300" Height="226" Margin="0,0,16,16" Padding="20,18" MouseLeftButtonDown="CardMouseDown" Cursor="Hand">
         <Grid>
           <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-          <TextBlock Text="{Binding Title}" FontSize="17" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" ToolTip="{Binding Title}"/>
+          <DockPanel LastChildFill="True"><controls:LockIcon DockPanel.Dock="Left" IsUnlocked="True" Margin="0,0,7,0" VerticalAlignment="Center" Visibility="{Binding DataContext.IsVaultSelected, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolVisibility}}"/><TextBlock Text="{Binding Title}" FontSize="17" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" ToolTip="{Binding Title}"/></DockPanel>
           <TextBlock Grid.Row="1" Text="{Binding Preview}" TextWrapping="Wrap" Foreground="#5D5E5A" Margin="0,12,0,12" LineHeight="22" TextTrimming="CharacterEllipsis"/>
           <DockPanel Grid.Row="2" Margin="0,0,0,10"><TextBlock Text="{Binding Updated}" FontSize="11" Foreground="#797A70"/><TextBlock Text="{Binding State}" FontSize="11" Foreground="#797A70" HorizontalAlignment="Right"/></DockPanel>
           <StackPanel Grid.Row="3" Orientation="Horizontal">
@@ -25,7 +25,7 @@
     <DataTemplate x:Key="TitleCardTemplate">
       <Button Width="208" Height="40" Margin="0,0,12,12" Padding="12,8" Background="{Binding Background}" HorizontalContentAlignment="Left" Click="OpenCard" DataContextChanged="CardContextChanged" ToolTip="{Binding Title}" AutomationProperties.Name="{Binding Title}">
         <Button.ContextMenu><ContextMenu Opened="TitleCardMenuOpened"/></Button.ContextMenu>
-        <TextBlock Text="{Binding Title}" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+        <DockPanel LastChildFill="True"><controls:LockIcon DockPanel.Dock="Left" IsUnlocked="True" Margin="0,0,7,0" VerticalAlignment="Center" Visibility="{Binding DataContext.IsVaultSelected, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolVisibility}}"/><TextBlock Text="{Binding Title}" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/></DockPanel>
       </Button>
     </DataTemplate>
     <Style x:Key="NavigationButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
@@ -57,7 +57,9 @@
             </DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
             <Button x:Name="UngroupedButton" Content="未分组" Click="ShowUngrouped" Style="{StaticResource NavigationButton}" Background="{Binding UngroupedBackground}" />
             <Button x:Name="TrashButton" Content="↺   回收站" Click="ShowTrash" Style="{StaticResource NavigationButton}" Background="{Binding TrashBackground}" />
-            <Button x:Name="VaultButton" Content="🔒   保险箱" Click="OpenVault" Style="{StaticResource NavigationButton}" ToolTip="主密码加密；导出加密文件后可在另一台电脑打开" />
+            <Button x:Name="VaultButton" Background="{Binding VaultBackground}" Click="OpenVault" Style="{StaticResource NavigationButton}" ToolTip="{Binding VaultLockHint}">
+              <StackPanel Orientation="Horizontal"><controls:LockIcon IsUnlocked="{Binding IsVaultUnlocked}" Margin="0,0,10,0"/><TextBlock Text="保险箱" VerticalAlignment="Center"/></StackPanel>
+            </Button>
             <Button Content="截图与录制" Click="StartCapture" Style="{StaticResource NavigationButton}" ToolTip="开始框选，选择截图、长图或录制"/>
 <Button x:Name="HistoryButton" Content="◷   时间轴" Click="OpenHistory" Style="{StaticResource NavigationButton}" />
           </StackPanel>
@@ -78,12 +80,19 @@
       <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
       <Grid>
         <StackPanel Margin="0,0,170,0">
-          <TextBlock Text="{Binding Heading}" FontSize="30" FontWeight="SemiBold" />
+          <DockPanel LastChildFill="True"><controls:LockIcon Width="24" Height="24" Margin="0,0,10,0" VerticalAlignment="Center" IsUnlocked="{Binding IsVaultUnlocked}" Visibility="{Binding IsVaultSelected, Converter={StaticResource BoolVisibility}}"/><TextBlock Text="{Binding Heading}" FontSize="30" FontWeight="SemiBold" /></DockPanel>
           <TextBlock Text="{Binding Subtitle}" Foreground="{StaticResource Muted}" Margin="0,8,0,0" />
         </StackPanel>
-        <Button Content="＋ 新建便签" Style="{StaticResource PrimaryButton}" HorizontalAlignment="Right" VerticalAlignment="Top" Click="NewNote" Margin="0,4,0,0" Padding="18,12" ToolTip="Ctrl+N" />
+        <Button IsEnabled="{Binding CanCreateNote}" Content="＋ 新建便签" Style="{StaticResource PrimaryButton}" HorizontalAlignment="Right" VerticalAlignment="Top" Click="NewNote" Margin="0,4,0,0" Padding="18,12" ToolTip="Ctrl+N" />
       </Grid>
       <Grid Grid.Row="1" Margin="0,28,0,16">
+        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+        <WrapPanel Grid.Row="1" Margin="0,12,0,0" Visibility="{Binding IsVaultSelected, Converter={StaticResource BoolVisibility}}">
+          <Button Content="解锁保险箱" Click="UnlockVault" IsEnabled="{Binding CanUnlockVault}"/>
+          <Button Content="立即锁定" Click="LockVault" IsEnabled="{Binding CanCreateNote}"/>
+          <Button Content="{Binding VaultTrashLabel}" Click="ToggleVaultTrash" IsEnabled="{Binding CanCreateNote}"/>
+          <Button Content="保险箱设置…" Click="VaultSettings"/>
+        </WrapPanel>
         <StackPanel Orientation="Horizontal">
           <TextBlock Text="{Binding ResultCount}" Foreground="{StaticResource Muted}" FontSize="12" VerticalAlignment="Center"/>
           <Button x:Name="ViewModeButton" Click="ToggleView" Background="Transparent" Padding="8,4" Margin="12,0,0,0" ToolTip="{Binding ViewModeHint}" AutomationProperties.Name="切换便签视图">

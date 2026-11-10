@@ -28,6 +28,11 @@ if ($global:StickyReleaseTestState.FailTests) { throw 'Simulated test failure' }
 [IO.File]::WriteAllText((Join-Path $fixture 'scripts\test-release.ps1'), '# Fixture publication checks do not recurse.')
 [IO.File]::WriteAllText((Join-Path $fixture 'scripts\test-publish-release.ps1'), '# Fixture API checks do not recurse.')
 [IO.File]::WriteAllText((Join-Path $fixture 'scripts\test-package-archive.ps1'), '# Fixture archive checks do not recurse.')
+[IO.File]::WriteAllText((Join-Path $fixture 'scripts\test-vault.ps1'), @'
+param($TestAssembly,$OutputDirectory)
+$global:StickyReleaseTestState.Events.Add('vault-tests')
+if ($global:StickyReleaseTestState.FailVault) { throw 'Simulated vault test failure' }
+'@)
 [IO.File]::WriteAllText((Join-Path $fixture 'scripts\test-portable-update.ps1'), @'
 param($Package,$TestAssembly)
 $global:StickyReleaseTestState.Events.Add('portable-tests')
@@ -50,7 +55,7 @@ $env:STICKY_TEST_FILTER = $null
 function Reset-State {
     $global:StickyReleaseTestState = @{ Calls = [Collections.Generic.List[string]]::new(); Dirty = $false; RemoteVersion = '0.1.9';
         LocalTag = $false; OtherCommit = $false; RemoteAhead = $false; FailPush = $false; Branch = 'main';
-        Events = [Collections.Generic.List[string]]::new(); ReleasePublished = $false; Draft = $false; RemoteSameHead = $false; FailTests = $false; FailUpload = $false; FailPortable = $false }
+        Events = [Collections.Generic.List[string]]::new(); ReleasePublished = $false; Draft = $false; RemoteSameHead = $false; FailTests = $false; FailUpload = $false; FailPortable = $false; FailVault = $false }
 }
 # A scoped Git test double: no real Git command, credential lookup or network request is executed.
 function git {
@@ -138,6 +143,11 @@ Expect-Refusal 'Simulated test failure'
 Assert-Release (!$global:StickyReleaseTestState.LocalTag -and !$global:StickyReleaseTestState.Events.Contains('push') -and !$global:StickyReleaseTestState.Events.Contains('upload')) 'Failed tests pushed or published files.'
 Pass 'Local test failures stop before tagging, pushing or uploading'
 
+Reset-State; $global:StickyReleaseTestState.FailVault = $true
+Expect-Refusal 'Simulated vault test failure'
+Assert-Release (!$global:StickyReleaseTestState.LocalTag -and !$global:StickyReleaseTestState.Events.Contains('package') -and !$global:StickyReleaseTestState.Events.Contains('push') -and !$global:StickyReleaseTestState.Events.Contains('upload')) 'Failed vault validation packaged or published files.'
+Pass 'Vault-specific failures block packaging, tags, push and publication'
+
 Reset-State; $global:StickyReleaseTestState.FailPortable = $true
 Expect-Refusal 'Simulated portable update test failure'
 Assert-Release (!$global:StickyReleaseTestState.LocalTag -and !$global:StickyReleaseTestState.Events.Contains('push') -and !$global:StickyReleaseTestState.Events.Contains('upload')) 'Failed real portable checks pushed or published files.'
@@ -163,7 +173,7 @@ Invoke-Fixture
 Assert-Release ($global:StickyReleaseTestState.Calls.Contains('push --atomic origin 1111111111111111111111111111111111111111:refs/heads/main refs/tags/v0.2.0:refs/tags/v0.2.0')) 'Branch and tag were not pushed atomically from the same commit.'
 Assert-Release (@($global:StickyReleaseTestState.Calls | Where-Object { $_ -match '(^| )(--force|--force-with-lease|commit|add|delete)( |$)' }).Count -eq 0) 'Release performed an unexpected write.'
 Pass 'Clean releases push exactly main and the version tag without force'
-Assert-Release (($global:StickyReleaseTestState.Events -join ',') -eq 'credentials,tests,package,portable-tests,push,upload') 'Local publish operations ran in the wrong order.'
+Assert-Release (($global:StickyReleaseTestState.Events -join ',') -eq 'credentials,tests,vault-tests,package,portable-tests,push,upload') 'Local publish operations ran in the wrong order.'
 Pass 'Tests and local packaging complete before push and upload'
 
 Write-Output "$script:cases release workflow checks passed. No real repository was changed."

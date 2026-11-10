@@ -14,6 +14,13 @@ public static class NoteMenus
 
     public static void FillMoveItems(ItemCollection items, StickyWorkspace workspace, Note note)
     {
+        if (workspace.IsVaultNote(note.Id))
+        {
+            var exit = new MenuItem { Header = "移出保险箱…" };
+            exit.Click += (_, _) => workspace.EnsureVaultController().MoveOut(note.Id);
+            items.Add(exit);
+            return;
+        }
         void Add(string label, Guid? id)
         {
             var item = new MenuItem { Header = label, IsCheckable = true, IsChecked = note.GroupId == id };

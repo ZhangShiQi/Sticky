@@ -26,15 +26,30 @@ public partial class MainWindow : Window
         if (_workspace is not null) throw new InvalidOperationException("窗口已关联工作空间。");
         _workspace = workspace;
         workspace.Manager = this;
+        PreviewKeyDown += (_, _) => { if (_viewModel.IsVaultSelected) workspace.TouchVault(); };
+        PreviewMouseDown += (_, _) => { if (_viewModel.IsVaultSelected) workspace.TouchVault(); };
         _viewModel = new MainViewModel(workspace);
         DataContext = _viewModel;
-        CommandBindings.Add(new CommandBinding(ApplicationCommands.New, (_, _) => workspace.CreateNote(_viewModel.SelectedGroupId)));
+        CommandBindings.Add(new CommandBinding(ApplicationCommands.New, (_, _) => CreateSelectedNote()));
         InputBindings.Add(new KeyBinding(ApplicationCommands.New, Key.N, ModifierKeys.Control));
         CommandBindings.Add(new CommandBinding(ApplicationCommands.Find, (_, _) => { SidebarSearchBox.Focus(); SidebarSearchBox.SelectAll(); }));
         InputBindings.Add(new KeyBinding(ApplicationCommands.Find, Key.F, ModifierKeys.Control));
     }
 
-    private void NewNote(object sender, RoutedEventArgs e) => _workspace.CreateNote(_viewModel.SelectedGroupId);
+    private void NewNote(object sender, RoutedEventArgs e) => CreateSelectedNote();
+    private void CreateSelectedNote()
+    {
+        if (_viewModel.IsVaultSelected) _workspace.CreateVaultNote();
+        else _workspace.CreateNote(_viewModel.SelectedGroupId);
+    }
+    public void SelectVault() => _viewModel.SelectVault();
+    private async void UnlockVault(object sender, RoutedEventArgs e) => await _workspace.EnsureVaultController().EnsureUnlockedAsync();
+    private void ToggleVaultTrash(object sender, RoutedEventArgs e) => _viewModel.ToggleVaultTrash();
+    private void LockVault(object sender, RoutedEventArgs e) => _workspace.EnsureVaultController().LockVault();
+    private void VaultSettings(object sender, RoutedEventArgs e)
+    {
+        var dialog = _workspace.EnsureVaultController(); dialog.Owner = this; dialog.Show(); dialog.Activate();
+    }
     private void ShowNotes(object sender, RoutedEventArgs e) => _viewModel.SelectGroup(null);
     private void ShowUngrouped(object sender, RoutedEventArgs e) => _viewModel.SelectGroup(null, ungroupedOnly: true);
     private void ShowTrash(object sender, RoutedEventArgs e) => _viewModel.ShowDeleted = true;
@@ -86,8 +101,8 @@ public partial class MainWindow : Window
     {
         if (sender is not Button { DataContext: NoteCard card } button) return;
         var menu = new ContextMenu { PlacementTarget = button };
-        var vault = new MenuItem { Header = "移入保险箱…" };
-        vault.Click += (_, _) => _workspace.MoveIntoVault(card.Note); menu.Items.Add(vault);
+        var vault = new MenuItem { Header = _workspace.IsVaultNote(card.Note.Id) ? "移出保险箱…" : "移入保险箱…" };
+        vault.Click += (_, _) => { if (_workspace.IsVaultNote(card.Note.Id)) _workspace.EnsureVaultController().MoveOut(card.Note.Id); else _workspace.MoveIntoVault(card.Note); }; menu.Items.Add(vault);
         button.ContextMenu = menu;
         var history = new MenuItem { Header = "历史版本与重放…" };
         history.Click += (_, _) => _workspace.ShowHistory(card.Note.Id);

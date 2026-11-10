@@ -30,7 +30,13 @@ public partial class NoteWindow
         if (image.Tag is not string id) return;
         try
         {
-            var viewer = new ImageViewerWindow(_workspace.Store, id) { Owner = this, Topmost = Topmost };
+            var viewer = new ImageViewerWindow(_workspace.StoreFor(_note), id) { Owner = this, Topmost = Topmost };
+            if (_workspace.IsVaultNote(_note.Id))
+            {
+                viewer.PreviewKeyDown += (_, _) => _workspace.TouchVault();
+                viewer.PreviewMouseDown += (_, _) => _workspace.TouchVault();
+                viewer.PreviewMouseWheel += (_, _) => _workspace.TouchVault();
+            }
             _imageViewer?.Close(); _imageViewer = viewer;
             viewer.Closed += (_, _) => { if (ReferenceEquals(_imageViewer, viewer)) _imageViewer = null; };
             viewer.Show(); viewer.Activate();
