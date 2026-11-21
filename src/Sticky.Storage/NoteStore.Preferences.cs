@@ -43,6 +43,8 @@ public sealed partial class NoteStore
 
     public static void ValidateEditorPreferences(EditorPreferences preferences)
     {
+        if (preferences.NewNoteFormat is not ("markdown" or "richText"))
+            throw new InvalidDataException("新建便签格式应为 Markdown 或富文本。");
         if (preferences.SchemaVersion != 1 || !double.IsFinite(preferences.DefaultFontSize) || preferences.DefaultFontSize is < 10 or > 48
             || !double.IsFinite(preferences.ParagraphSpacing) || preferences.ParagraphSpacing is < 0 or > 32)
             throw new InvalidDataException("默认字号应为 10–48，段落间距应为 0–32。单位为逻辑像素。");

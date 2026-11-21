@@ -19,7 +19,7 @@ public partial class NoteWindow
             foreach (var action in actions)
             {
                 var item = new MenuItem { Header = action.Name, Icon = AiActionIcons.Create(action.Icon), Tag = action.Id,
-                    IsEnabled = !Editor.Selection.IsEmpty && !string.IsNullOrWhiteSpace(Editor.Selection.Text), ToolTip = action.Prompt };
+                    IsEnabled = !string.IsNullOrWhiteSpace(_note.IsMarkdown ? MarkdownEditor.SelectedText : Editor.Selection.Text), ToolTip = action.Prompt };
                 item.Click += (_, _) => ExecuteAiAction(action); menu.Items.Add(item);
             }
             if (actions.Count == 0) menu.Items.Add(new MenuItem { Header = "尚无启用的 AI 功能", IsEnabled = false });
@@ -43,24 +43,45 @@ public partial class NoteWindow
         { _workspace.ShowSettings(SettingsSection.AI); return; }
         try
         {
-            using var selection = AiTextSelection.Capture(Editor);
+            using var selection = _note.IsMarkdown ? null : AiTextSelection.Capture(Editor);
             if (!SaveNow()) return;
+            var original = selection?.OriginalText ?? MarkdownEditor.SelectedText;
+            if (string.IsNullOrWhiteSpace(original) || original.Length > AiClient.MaxInputCharacters)
+                throw new AiException("请选中 1–20,000 字符的文字。");
+            var markdown = MarkdownEditor.Text;
+            var start = MarkdownEditor.SelectionStart;
+            var priorModified = _note.ModifiedAt;
+            bool CanApply() => !_workspace.IsExiting && IsVisible && _note.DeletedAt is null
+                && (selection?.CanApply ?? (_note.IsMarkdown && _note.ModifiedAt == priorModified && MarkdownEditor.Text == markdown));
+
             _modalDepth++;
             try
             {
-                var dialog = new AiPolishWindow(_workspace.AiClient, configuration, selection, result =>
+                var dialog = new AiPolishWindow(_workspace.AiClient, configuration, original, CanApply, result =>
                 {
-                    if (_workspace.IsExiting || !IsVisible || _note.DeletedAt is not null || !selection.CanApply) return false;
+                    if (!CanApply()) return false;
                     EnterEditMode();
                     _historyBatch = Guid.NewGuid().ToString("N");
-                    if (!selection.Apply(result)) return false;
+                    if (selection is not null)
+                    {
+                        if (!selection.Apply(result)) return false;
+                    }
+                    else
+                    {
+                        if (string.IsNullOrWhiteSpace(result) || result.Length > AiClient.MaxOutputCharacters)
+                            throw new AiException("结果不能为空或超过 60,000 字符。");
+                        var trimmed = original.Trim();
+                        var offset = original.IndexOf(trimmed, StringComparison.Ordinal);
+                        MarkdownEditor.Select(start + offset, trimmed.Length);
+                        MarkdownEditor.SelectedText = result.Trim();
+                    }
                     SaveNow(false, "AI · " + action.Name);
                     _historyBatch = Guid.NewGuid().ToString("N");
                     return true;
                 }, action) { Owner = this };
                 dialog.ShowDialog();
             }
-            finally { _modalDepth--; if (IsVisible && !_workspace.IsExiting) { Activate(); Editor.Focus(); } }
+            finally { _modalDepth--; if (IsVisible && !_workspace.IsExiting) { Activate(); FocusBody(); } }
         }
         catch (Exception ex) { MessageBox.Show(this, ex is AiException ? ex.Message : "无法打开 AI 功能，请检查配置后重试。", "AI 功能", MessageBoxButton.OK, MessageBoxImage.Information); }
     }

@@ -1,8 +1,13 @@
+using System.Text.Json.Serialization;
+
 namespace Sticky.Core;
 
 public sealed class Note
 {
-    public int SchemaVersion { get; set; } = 1;
+    public const int RichTextVersion = 1;
+    public const int MarkdownVersion = 2;
+
+    public int SchemaVersion { get; set; } = RichTextVersion;
     public Guid Id { get; set; } = Guid.NewGuid();
     public string Title { get; set; } = "";
     public string Color { get; set; } = "amber";
@@ -12,19 +17,71 @@ public sealed class Note
     public DateTimeOffset ModifiedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? DeletedAt { get; set; }
     public List<NoteBlock> Blocks { get; set; } = [];
+    private string? _markdownSource;
+    private MarkdownProjection? _markdownProjection;
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? MarkdownSource
+    {
+        get => _markdownSource;
+        set
+        {
+            if (_markdownSource == value) return;
+            _markdownSource = value;
+            _markdownProjection = null;
+        }
+    }
+
+    [JsonIgnore] public bool IsMarkdown => SchemaVersion == MarkdownVersion;
+    [JsonIgnore] public string FormatLabel => IsMarkdown ? "Markdown" : "富文本";
+
+    public void SetMarkdown(string source)
+    {
+        SchemaVersion = MarkdownVersion;
+        MarkdownSource = source;
+        Blocks = [];
+    }
+
+    public void SetRichText(List<NoteBlock> blocks)
+    {
+        SchemaVersion = RichTextVersion;
+        MarkdownSource = null;
+        Blocks = blocks;
+    }
+
+    public void CopyBodyFrom(Note note)
+    {
+        SchemaVersion = note.SchemaVersion;
+        MarkdownSource = note.MarkdownSource;
+        Blocks = note.Blocks;
+    }
+
+    public MarkdownProjection ProjectMarkdown() => _markdownProjection ??= MarkdownBody.Project(MarkdownSource ?? "");
+    public IReadOnlyList<NoteBlock> GetBodyBlocks() => IsMarkdown ? ProjectMarkdown().Blocks : Blocks;
+    public IEnumerable<string> GetImageIds() => ImageIds(GetBodyBlocks());
+
+    private static IEnumerable<string> ImageIds(IEnumerable<NoteBlock> blocks)
+    {
+        foreach (var block in blocks)
+        {
+            foreach (var inline in block.Inlines)
+                if (inline.Kind == "image" && inline.AssetId is { } id) yield return id;
+            foreach (var id in ImageIds(block.Children)) yield return id;
+        }
+    }
 
     public string DisplayTitle
     {
         get
         {
             if (!string.IsNullOrWhiteSpace(Title)) return Title.Trim();
-            using var reader = new StringReader(string.Join("\n", Blocks.Select(b => GetText(b, includeImages: false))));
+            using var reader = new StringReader(string.Join("\n", GetBodyBlocks().Select(b => GetText(b, includeImages: false))));
             while (reader.ReadLine() is { } line)
                 if (!string.IsNullOrWhiteSpace(line)) return line.Trim();
             return "未命名便签";
         }
     }
-    public string PlainText => string.Join("\n", Blocks.Select(b => GetText(b, includeImages: true)));
+    public string PlainText => string.Join("\n", GetBodyBlocks().Select(b => GetText(b, includeImages: true)));
     private static string GetText(NoteBlock block, bool includeImages) => block.Kind == "paragraph"
         ? string.Concat(block.Inlines.Select(i => i.Kind == "image" ? (includeImages ? " [图片] " : "") : i.Text))
         : string.Join("\n", block.Children.Select(b => GetText(b, includeImages)));
@@ -54,10 +111,12 @@ public sealed class NoteInline
     public bool? UsesDefaultFontSize { get; set; }
     public string? AssetId { get; set; }
     public double Width { get; set; } = 280;
+    [JsonIgnore] public bool MarkdownCode { get; set; }
 }
 
 public sealed class WindowState
 {
+    [JsonIgnore] public int? ContentZoomPercent { get; set; }
     public bool IsOpen { get; set; }
     public bool Topmost { get; set; }
     public double Left { get; set; } = 160;
@@ -91,6 +150,7 @@ public sealed class EditorPreferences
     public bool RandomizeNewNoteColor { get; set; } = true;
     public bool AutoHideHeader { get; set; }
     public bool ShowHeaderOnHover { get; set; } = true;
+    public string NewNoteFormat { get; set; } = "markdown";
 }
 
 public sealed class ManagerPreferences

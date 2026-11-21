@@ -58,8 +58,14 @@
                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top"><Button x:Name="RestoreCopyButton" Content="恢复为新便签" Click="RestoreCopy" IsEnabled="False" Padding="10,7"/><Button x:Name="RestoreCurrentButton" Content="恢复到当前…" Click="RestoreCurrent" IsEnabled="False" Padding="10,7" Margin="0"/></StackPanel>
               </Grid>
               <TabControl Grid.Row="1"><TabItem Header="内容对比"><Grid Margin="0,8,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="10"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                <DockPanel><TextBlock Text="修改前" DockPanel.Dock="Top" Foreground="{StaticResource Muted}" Margin="0,0,0,6"/><RichTextBox x:Name="BeforePreview" IsReadOnly="True" IsDocumentEnabled="False" AllowDrop="False" VerticalScrollBarVisibility="Auto" Background="#333333" Foreground="#EEEEEE" BorderThickness="0" Padding="10" AutomationProperties.Name="历史修改前内容"/></DockPanel>
-                <DockPanel Grid.Column="2"><TextBlock Text="该版本" DockPanel.Dock="Top" Foreground="{StaticResource Muted}" Margin="0,0,0,6"/><RichTextBox x:Name="AfterPreview" IsReadOnly="True" IsDocumentEnabled="False" AllowDrop="False" VerticalScrollBarVisibility="Auto" Background="#333333" Foreground="#EEEEEE" BorderThickness="0" Padding="10" AutomationProperties.Name="历史版本内容"/></DockPanel>
+                <DockPanel>
+                  <DockPanel DockPanel.Dock="Top" Margin="0,0,0,6">
+                    <Button x:Name="RestoreBeforeConversionButton" Content="恢复转换前…" Click="RestoreBeforeConversion" DockPanel.Dock="Right" Visibility="Collapsed" Margin="6,0,0,0" Padding="6,2"/>
+                    <TextBlock x:Name="BeforeLabel" Text="修改前" Foreground="{StaticResource Muted}" VerticalAlignment="Center"/>
+                  </DockPanel>
+                  <RichTextBox x:Name="BeforePreview" IsReadOnly="True" IsDocumentEnabled="False" AllowDrop="False" VerticalScrollBarVisibility="Auto" Background="#333333" Foreground="#EEEEEE" BorderThickness="0" Padding="10" AutomationProperties.Name="历史修改前内容"/>
+                </DockPanel>
+                <DockPanel Grid.Column="2"><TextBlock x:Name="AfterLabel" Text="该版本" DockPanel.Dock="Top" Foreground="{StaticResource Muted}" Margin="0,0,0,6"/><RichTextBox x:Name="AfterPreview" IsReadOnly="True" IsDocumentEnabled="False" AllowDrop="False" VerticalScrollBarVisibility="Auto" Background="#333333" Foreground="#EEEEEE" BorderThickness="0" Padding="10" AutomationProperties.Name="历史版本内容"/></DockPanel>
               </Grid></TabItem><TabItem Header="变更详情"><TextBox x:Name="ChangesText" IsReadOnly="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" Background="#F3F4EF" BorderThickness="0" Padding="12"/></TabItem></TabControl>
             </Grid>
           </TabItem>

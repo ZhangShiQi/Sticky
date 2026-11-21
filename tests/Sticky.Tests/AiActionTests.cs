@@ -7,6 +7,7 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Sticky.App;
+using Sticky.App.Editor;
 using Sticky.App.AI;
 using Sticky.Core;
 using Sticky.Storage;
@@ -101,7 +102,7 @@ internal static partial class Program
             var selected = (AiAction)((ListBox)view.FindName("ActionList")).SelectedItem;
             var selectedId = selected.Id;
             workspace.CreateNote(); var window = workspace.Windows.Values.Single();
-            var editor = (RichTextBox)window.FindName("Editor"); editor.AppendText("测试文字"); editor.SelectAll();
+            var editor = (MarkdownLiveEditor)window.FindName("MarkdownEditor"); editor.AppendText("测试文字"); editor.SelectAll();
             var button = (Button)window.FindName("AiButton"); button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); Pump(20);
             var items = button.ContextMenu!.Items.OfType<MenuItem>().Where(i => i.Tag is Guid).ToList();
             Check(items.Count == catalog.Actions.Count - 1 && items.All(i => (Guid)i.Tag != selectedId && i.Icon is Viewbox), "The toolbar menu did not use active actions and shared SVG icons.");

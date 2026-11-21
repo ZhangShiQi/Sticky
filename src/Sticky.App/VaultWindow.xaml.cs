@@ -158,7 +158,15 @@ public partial class VaultWindow : Window
         var dialog = new Window { Owner = DialogOwner, Title = "保险箱 · 历史版本", Width = 700, Height = 520, WindowStartupLocation = WindowStartupLocation.CenterOwner };
         dialog.PreviewKeyDown += (_, _) => Touch(); dialog.PreviewMouseDown += (_, _) => Touch();
         var panel = new DockPanel { Margin = new Thickness(20) };
-        var list = new ListBox { Height = 150, DisplayMemberPath = "ModifiedAt", ItemsSource = versions };
+        var list = new ListBox { Height = 150, ItemsSource = versions };
+        list.ItemTemplate = new DataTemplate(typeof(Note))
+        {
+            VisualTree = new FrameworkElementFactory(typeof(TextBlock))
+        };
+        var label = new System.Windows.Data.MultiBinding { StringFormat = "{0:yyyy-MM-dd HH:mm:ss} · {1}" };
+        label.Bindings.Add(new System.Windows.Data.Binding(nameof(Note.ModifiedAt)));
+        label.Bindings.Add(new System.Windows.Data.Binding(nameof(Note.FormatLabel)));
+        list.ItemTemplate.VisualTree.SetBinding(TextBlock.TextProperty, label);
         DockPanel.SetDock(list, Dock.Top); panel.Children.Add(list);
         var restore = new Button { Content = "恢复选中版本", IsEnabled = false }; DockPanel.SetDock(restore, Dock.Bottom); panel.Children.Add(restore);
         var preview = new RichTextBox { IsReadOnly = true, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
@@ -166,14 +174,14 @@ public partial class VaultWindow : Window
         list.SelectionChanged += (_, _) =>
         {
             restore.IsEnabled = list.SelectedItem is Note;
-            if (list.SelectedItem is Note note) preview.Document = DocumentCodec.Decode(note.Blocks, asset => new MemoryStream(Vault.ReadImage(asset), false));
+            if (list.SelectedItem is Note note) preview.Document = DocumentCodec.Decode(note.GetBodyBlocks(), asset => new MemoryStream(Vault.ReadImage(asset), false), renderMarkdown: note.IsMarkdown);
         };
         restore.Click += (_, _) =>
         {
             if (!Vault.IsUnlocked || list.SelectedItem is not Note note) return;
             try { note.ModifiedAt = DateTimeOffset.UtcNow; note.DeletedAt = null; Vault.Save(note); dialog.Close();
                 var current = _workspace.PrivateNotes.Single(n => n.Id == id);
-                current.Title = note.Title; current.Blocks = note.Blocks; current.Color = note.Color; current.ModifiedAt = note.ModifiedAt; current.DeletedAt = note.DeletedAt;
+                current.Title = note.Title; current.CopyBodyFrom(note); current.Color = note.Color; current.ModifiedAt = note.ModifiedAt; current.DeletedAt = note.DeletedAt;
                 if (_workspace.Windows.TryGetValue(id, out var editor)) editor.ReloadAfterSync(true, "已恢复私密历史版本");
                 _workspace.NotifyChanged(); }
             catch (Exception ex) { StickyWorkspace.ShowError("无法恢复私密历史", ex); }
@@ -189,7 +197,7 @@ public partial class VaultWindow : Window
         {
             if (!Vault.IsUnlocked || _workspace.VaultViewsHidden || !SaveCurrent()) return;
             var note = Vault.Notes.Single(n => n.Id == id); var oldId = note.Id;
-            foreach (var asset in Storage.VaultStore.ImageIds(note.Blocks).Distinct()) _workspace.Store.AddImage(Vault.ReadImage(asset));
+            foreach (var asset in note.GetImageIds().Distinct()) _workspace.Store.AddImage(Vault.ReadImage(asset));
             note.Id = Guid.NewGuid(); note.GroupId = null; note.ConflictOf = null; note.ModifiedAt = DateTimeOffset.UtcNow;
             _workspace.Store.Save(note); _workspace.Notes.Add(note); _workspace.NotifyChanged();
             if (_workspace.Windows.TryGetValue(oldId, out var editor)) { editor.Close(); editor.ClearPrivateContent(); }

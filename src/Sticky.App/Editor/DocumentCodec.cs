@@ -126,14 +126,17 @@ public static class DocumentCodec
         return color is "#FF292B32" or "#FF000000" or "#FFECECEC" ? null : color;
     }
 
-    public static FlowDocument Decode(IEnumerable<NoteBlock> blocks, NoteStore store, bool darkTheme = false, EditorPreferences? preferences = null)
-        => Decode(blocks, store.OpenImage, darkTheme, preferences);
+    public static FlowDocument Decode(IEnumerable<NoteBlock> blocks, NoteStore store, bool darkTheme = false, EditorPreferences? preferences = null, bool renderMarkdown = false)
+        => Decode(blocks, store.OpenImage, darkTheme, preferences, renderMarkdown);
 
-    public static FlowDocument Decode(IEnumerable<NoteBlock> blocks, Func<string, Stream> readImage, bool darkTheme = false, EditorPreferences? preferences = null)
+    public static FlowDocument Decode(Note note, NoteStore store, bool darkTheme = false, EditorPreferences? preferences = null)
+        => Decode(note.GetBodyBlocks(), store, darkTheme, preferences, note.IsMarkdown);
+
+    public static FlowDocument Decode(IEnumerable<NoteBlock> blocks, Func<string, Stream> readImage, bool darkTheme = false, EditorPreferences? preferences = null, bool renderMarkdown = false)
     {
         var document = new FlowDocument { FontFamily = new FontFamily("Segoe UI, Microsoft YaHei UI"),
             PagePadding = new Thickness(0), Foreground = darkTheme ? new SolidColorBrush(Color.FromRgb(236, 236, 236)) : new SolidColorBrush(Color.FromRgb(41, 43, 50)) };
-        foreach (var block in blocks) document.Blocks.Add(DecodeBlock(block, readImage, darkTheme));
+        foreach (var block in blocks) document.Blocks.Add(DecodeBlock(block, readImage, darkTheme, renderMarkdown));
         if (document.Blocks.Count == 0) document.Blocks.Add(new Paragraph());
         ApplyDefaults(document, preferences ?? new EditorPreferences());
         return document;
@@ -164,7 +167,7 @@ public static class DocumentCodec
         ApplyBlocks(document.Blocks);
     }
 
-    private static Block DecodeBlock(NoteBlock block, Func<string, Stream> readImage, bool darkTheme)
+    private static Block DecodeBlock(NoteBlock block, Func<string, Stream> readImage, bool darkTheme, bool renderMarkdown)
     {
         if (block.Kind == "list")
         {
@@ -173,7 +176,7 @@ public static class DocumentCodec
             foreach (var item in block.Children)
             {
                 var li = new ListItem();
-                foreach (var child in item.Children) li.Blocks.Add(DecodeBlock(child, readImage, darkTheme));
+                foreach (var child in item.Children) li.Blocks.Add(DecodeBlock(child, readImage, darkTheme, renderMarkdown));
                 if (li.Blocks.Count == 0) li.Blocks.Add(new Paragraph());
                 list.ListItems.Add(li);
             }
@@ -185,12 +188,14 @@ public static class DocumentCodec
             if (inline.Kind == "image" && inline.AssetId is { } id)
             {
                 var image = CreateImage(id, inline.Width, readImage);
+                if (renderMarkdown && image.Source is not null) image.ToolTip = "双击放大查看；在 Markdown 源码中编辑图片引用";
                 paragraph.Inlines.Add(new InlineUIContainer(image) { BaselineAlignment = BaselineAlignment.Center });
             }
             else
             {
                 var run = new Run(inline.Text) { FontWeight = inline.Bold ? FontWeights.Bold : FontWeights.Normal,
                     FontStyle = inline.Italic ? FontStyles.Italic : FontStyles.Normal };
+                if (renderMarkdown && inline.MarkdownCode) run.FontFamily = new FontFamily("Consolas, Microsoft YaHei UI");
                 if (!(inline.UsesDefaultFontSize ?? inline.FontSize == 16))
                     run.FontSize = double.IsFinite(inline.FontSize) ? Math.Clamp(inline.FontSize, 10, 48) : 16;
                 if (!(darkTheme && inline.Foreground is "#FF292B32" or "#FF000000") && inline.Foreground is { Length: 9 } color && color[0] == '#' && uint.TryParse(color.AsSpan(1), System.Globalization.NumberStyles.HexNumber, null, out var rgba))
@@ -205,17 +210,22 @@ public static class DocumentCodec
         return paragraph;
     }
 
-    public static Image CreateImage(string id, double width, NoteStore store)
-        => CreateImage(id, width, store.OpenImage);
+    public static Image CreateImage(string id, double width, NoteStore store, IDictionary<string, BitmapSource>? bitmaps = null)
+        => CreateImage(id, width, store.OpenImage, bitmaps);
 
-    public static Image CreateImage(string id, double width, Func<string, Stream> readImage)
+    public static Image CreateImage(string id, double width, Func<string, Stream> readImage, IDictionary<string, BitmapSource>? bitmaps = null)
     {
         var image = new Image { Tag = id, Width = double.IsFinite(width) ? Math.Clamp(width, 60, 800) : 280,
             MaxWidth = 800, Stretch = Stretch.Uniform, Margin = new Thickness(0, 8, 0, 8), ToolTip = "双击放大查看；右键调整图片大小或移除图片" };
         try
         {
-            using var stream = readImage(id);
-            image.Source = LoadBitmap(stream);
+            if (bitmaps?.TryGetValue(id, out var bitmap) != true)
+            {
+                using var stream = readImage(id);
+                bitmap = LoadBitmap(stream);
+                bitmaps?.Add(id, bitmap);
+            }
+            image.Source = bitmap;
         }
         catch (Exception ex) when (ex is IOException or NotSupportedException or ArgumentException or InvalidOperationException)
         {

@@ -112,6 +112,7 @@ public partial class SettingsWindow : Window
         RandomColorCheckBox.IsChecked = preferences.RandomizeNewNoteColor;
         HoverHeaderCheckBox.IsChecked = preferences.ShowHeaderOnHover;
         AutoHideHeaderCheckBox.IsChecked = preferences.AutoHideHeader;
+        NewNoteFormatBox.SelectedValue = preferences.NewNoteFormat;
     }
     private void SaveTypography(object sender, RoutedEventArgs e)
     {
@@ -122,7 +123,7 @@ public partial class SettingsWindow : Window
                 throw new InvalidDataException("请输入有效的字号和段落间距数值。");
             if (!_workspace.UpdateEditorPreferences(new EditorPreferences { DefaultFontSize = fontSize, ParagraphSpacing = spacing,
                 RandomizeNewNoteColor = RandomColorCheckBox.IsChecked == true, ShowHeaderOnHover = HoverHeaderCheckBox.IsChecked == true,
-                AutoHideHeader = AutoHideHeaderCheckBox.IsChecked == true }))
+                AutoHideHeader = AutoHideHeaderCheckBox.IsChecked == true, NewNoteFormat = (string)NewNoteFormatBox.SelectedValue }))
                 throw new IOException("存在未保存成功的便签，请先处理保存问题后重试。");
             TypographyStatus.Foreground = System.Windows.Media.Brushes.DarkGreen;
             TypographyStatus.Text = "设置已保存，便签显示已更新。";

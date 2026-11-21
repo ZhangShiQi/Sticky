@@ -105,6 +105,8 @@ New-Item -ItemType Directory -Path (Join-Path $OutputDirectory 'assets') | Out-N
 Copy-Item -LiteralPath (Join-Path $projectRoot 'src\Sticky.App\Assets\Sticky.svg') -Destination (Join-Path $OutputDirectory 'assets\Sticky.svg')
 Copy-Item -LiteralPath (Join-Path $projectRoot 'packaging\THIRD-PARTY-SOURCES.txt') -Destination (Join-Path $licenses 'THIRD-PARTY-SOURCES.txt')
 Copy-Item -LiteralPath (Join-Path $projectRoot 'packaging\Konscious-MIT.txt') -Destination (Join-Path $licenses 'Konscious-MIT.txt')
+Copy-Item -LiteralPath (Join-Path $projectRoot 'packaging\Markdig-BSD-2-Clause.txt') -Destination (Join-Path $licenses 'Markdig-BSD-2-Clause.txt')
+Copy-Item -LiteralPath (Join-Path $projectRoot 'packaging\AvalonEdit-MIT.txt') -Destination (Join-Path $licenses 'AvalonEdit-MIT.txt')
 [System.IO.File]::WriteAllText((Join-Path $OutputDirectory 'portable.flag'), 'Sticky portable workspace; data is stored beside Sticky.exe in Data.')
 $manifest = [ordered]@{
     application = 'Sticky'; version = $version; runtimeIdentifier = 'win-x64'; selfContained = $true; singleFile = $true

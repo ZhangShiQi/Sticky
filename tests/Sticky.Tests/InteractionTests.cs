@@ -101,7 +101,7 @@ internal static partial class Program
     private static void EditingHeaderStability()
     {
         var workspace = new StickyWorkspace(Path.Combine(_root, "editing-header-stability"));
-        workspace.UpdateEditorPreferences(new EditorPreferences { AutoHideHeader = true });
+        workspace.UpdateEditorPreferences(new EditorPreferences { AutoHideHeader = true, NewNoteFormat = "richText" });
         workspace.CreateNote(); Pump(30);
         var note = workspace.Notes[0]; var window = workspace.Windows[note.Id];
         var editor = (RichTextBox)window.FindName("Editor");

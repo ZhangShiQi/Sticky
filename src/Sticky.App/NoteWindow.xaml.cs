@@ -25,6 +25,7 @@ public partial class NoteWindow : Window
     private readonly DispatcherTimer _layoutTimer = new() { Interval = TimeSpan.FromMilliseconds(700) };
     private bool _loading = true;
     private bool _dirty;
+    private bool _markdownDirty;
     private string _color;
     private int _modalDepth;
     private bool _menuOpen;
@@ -49,11 +50,13 @@ public partial class NoteWindow : Window
         _showHeaderOnHover = workspace.EditorPreferences.ShowHeaderOnHover;
         _autoHideHeader = workspace.EditorPreferences.AutoHideHeader;
         InitializeComponent();
+        InitializeContentZoom();
         TitleBox.Text = note.Title;
         ApplyTheme();
-        Editor.Document = DocumentCodec.Decode(note.Blocks, workspace.StoreFor(note), darkTheme: true, workspace.EditorPreferences);
+        MarkdownEditor.CreateAttachment = CreateMarkdownImage;
+        ReloadBody();
         Editor.ContextMenu = BuildNoteMenu();
-        AttachImageMenus();
+        MarkdownEditor.ContextMenu = BuildNoteMenu();
         Width = FiniteClamp(state.Width, 280, 1200, 390);
         Height = FiniteClamp(state.Height, 180, 1200, 320);
         Left = FiniteClamp(near is null ? state.Left : near.Left + 32, -1_000_000, 1_000_000, 190);
@@ -79,6 +82,18 @@ public partial class NoteWindow : Window
         InputBindings.Add(new KeyBinding(ApplicationCommands.Find, Key.F, ModifierKeys.Control));
         // Cancel WPF's default XAML/RTF import. Only text and normalized raster images enter the document.
         DataObject.AddPastingHandler(Editor, (_, e) => { e.CancelCommand(); PasteClipboard(); });
+        CommandManager.AddPreviewCanExecuteHandler(MarkdownEditor, (_, e) =>
+        {
+            if (e.Command != ApplicationCommands.Paste) return;
+            e.CanExecute = true;
+            e.Handled = true;
+        });
+        CommandManager.AddPreviewExecutedHandler(MarkdownEditor, (_, e) =>
+        {
+            if (e.Command != ApplicationCommands.Paste) return;
+            e.Handled = true;
+            PasteClipboard();
+        });
         if (workspace.IsVaultNote(note.Id))
         {
             PrivateLockIcon.Visibility = Visibility.Visible;
@@ -92,6 +107,18 @@ public partial class NoteWindow : Window
                 {
                     workspace.EnsureVaultController().CopyPrivateText(Editor.Selection.Text);
                     if (e.Command == ApplicationCommands.Cut && !Editor.IsReadOnly) Editor.Selection.Text = "";
+                }
+                catch (ExternalException) { SaveStatus.Text = "剪贴板忙，请重试。"; }
+            });
+            CommandManager.AddPreviewExecutedHandler(MarkdownEditor, (_, e) =>
+            {
+                if (e.Command != ApplicationCommands.Copy && e.Command != ApplicationCommands.Cut) return;
+                e.Handled = true;
+                if (MarkdownEditor.SelectionLength == 0) return;
+                try
+                {
+                    workspace.EnsureVaultController().CopyPrivateText(MarkdownEditor.SelectedText);
+                    if (e.Command == ApplicationCommands.Cut && IsEditing) MarkdownEditor.SelectedText = "";
                 }
                 catch (ExternalException) { SaveStatus.Text = "剪贴板忙，请重试。"; }
             });
@@ -113,10 +140,9 @@ public partial class NoteWindow : Window
     {
         if (!IsEditing) _historyBatch = Guid.NewGuid().ToString("N");
         SetValue(IsEditingProperty, true);
-        Editor.IsReadOnly = false;
-        Editor.VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
+        UpdateBodyMode();
         ApplyTheme();
-        Editor.Focus();
+        FocusBody();
         UpdateFormatButtons();
         UpdateHeaderState();
     }
@@ -125,9 +151,9 @@ public partial class NoteWindow : Window
     {
         if (!SaveNow(false)) return;
         SetValue(IsEditingProperty, false);
-        Editor.IsReadOnly = true;
-        Editor.VerticalScrollBarVisibility = ScrollBarVisibility.Hidden;
+        UpdateBodyMode();
         ApplyTheme();
+        UpdateCounters();
         UpdateHeaderState();
     }
 
@@ -137,8 +163,8 @@ public partial class NoteWindow : Window
         try
         {
             TitleBox.Text = _note.Title; _color = _note.Color;
-            if (reloadBody) { Editor.Document = DocumentCodec.Decode(_note.Blocks, _workspace.StoreFor(_note), darkTheme: true, _workspace.EditorPreferences); AttachImageMenus(); }
-            ApplyTheme(); _dirty = false;
+            if (reloadBody) ReloadBody();
+            ApplyTheme(); _dirty = _markdownDirty = false;
             SaveStatus.Text = status; SaveIndicator.Content = "✓"; UpdateCounters();
         }
         finally { _loading = false; }
@@ -158,6 +184,7 @@ public partial class NoteWindow : Window
         try
         {
             DocumentCodec.ApplyDefaults(Editor.Document, preferences);
+            MarkdownEditor.FontSize = preferences.DefaultFontSize;
             _showHeaderOnHover = preferences.ShowHeaderOnHover;
             _autoHideHeader = preferences.AutoHideHeader;
             UpdateHeaderState();
@@ -172,7 +199,8 @@ public partial class NoteWindow : Window
 
     private void OnWindowKeyDown(object sender, KeyEventArgs e)
     {
-        if (e.Key == Key.Escape && !_menuOpen) { FinishEditing(); e.Handled = true; }
+        if (HandleZoomKey(e)) e.Handled = true;
+        else if (e.Key == Key.Escape && !_menuOpen) { FinishEditing(); e.Handled = true; }
         else if (e.Key == Key.F2) { EnterEditMode(); e.Handled = true; }
     }
     private void DragHeader(object sender, MouseButtonEventArgs e)
@@ -193,6 +221,7 @@ public partial class NoteWindow : Window
     private void EditorSelectionChanged(object sender, RoutedEventArgs e) { if (!_loading) UpdateFormatButtons(); }
     private void UpdateFormatButtons()
     {
+        if (_note.IsMarkdown) return;
         BoldButton.IsChecked = Editor.Selection.GetPropertyValue(TextElement.FontWeightProperty) is FontWeight weight && weight.ToOpenTypeWeight() >= 600;
         ItalicButton.IsChecked = Editor.Selection.GetPropertyValue(TextElement.FontStyleProperty) is FontStyle style && style == FontStyles.Italic;
         var decorations = Editor.Selection.GetPropertyValue(Inline.TextDecorationsProperty) as TextDecorationCollection;
@@ -200,9 +229,10 @@ public partial class NoteWindow : Window
         StrikeButton.IsChecked = decorations?.Any(d => d.Location == TextDecorationLocation.Strikethrough) == true;
     }
 
-    private void ContentChanged(object sender, RoutedEventArgs e)
+    private void ContentChanged(object? sender, EventArgs e)
     {
         if (_loading || Editor is null) return;
+        if (ReferenceEquals(sender, MarkdownEditor)) _markdownDirty = true;
         MarkDirty();
         UpdateCounters();
     }
@@ -220,16 +250,19 @@ public partial class NoteWindow : Window
 
     private void UpdateCounters()
     {
-        var text = new TextRange(Editor.Document.ContentStart, Editor.Document.ContentEnd).Text.Trim();
-        var hasImage = EnumerateImages(Editor.Document.Blocks).Any();
-        Placeholder.Visibility = text.Length == 0 && !hasImage ? Visibility.Visible : Visibility.Collapsed;
+        var text = _note.IsMarkdown ? MarkdownEditor.Text : new TextRange(Editor.Document.ContentStart, Editor.Document.ContentEnd).Text;
+        var hasImage = !_note.IsMarkdown && EnumerateImages(Editor.Document.Blocks).Any();
+        Placeholder.Visibility = string.IsNullOrWhiteSpace(text) && !hasImage ? Visibility.Visible : Visibility.Collapsed;
+        text = text.Trim();
         WordCount.Text = $"{text.Length} 字";
         UpdateTitle();
     }
 
     private void UpdateTitle()
     {
-        HeaderTitle.Text = DocumentCodec.GetDisplayTitle(Editor.Document, TitleBox.Text);
+        HeaderTitle.Text = _note.IsMarkdown
+            ? (string.IsNullOrWhiteSpace(TitleBox.Text) ? _note.DisplayTitle : TitleBox.Text.Trim())
+            : DocumentCodec.GetDisplayTitle(Editor.Document, TitleBox.Text);
         Title = HeaderTitle.Text + " · Sticky";
     }
 
@@ -240,15 +273,20 @@ public partial class NoteWindow : Window
         var oldTitle = _note.Title;
         var oldColor = _note.Color;
         var oldBlocks = _note.Blocks;
+        var oldMarkdown = _note.MarkdownSource;
         var oldModified = _note.ModifiedAt;
         try
         {
-            _note.Blocks = DocumentCodec.Encode(Editor.Document);
+            if (_note.IsMarkdown)
+            {
+                if (_markdownDirty) _note.MarkdownSource = MarkdownEditor.Text;
+            }
+            else _note.Blocks = DocumentCodec.Encode(Editor.Document);
             _note.Title = TitleBox.Text;
             _note.Color = _color;
             _note.ModifiedAt = DateTimeOffset.UtcNow;
             using (var history = _workspace.StoreFor(_note).History.WithContext("local", _historyBatch, historyReason)) _workspace.StoreFor(_note).Save(_note);
-            _dirty = false;
+            _dirty = _markdownDirty = false;
             SaveStatus.Text = "已保存 · " + DateTime.Now.ToString("HH:mm:ss");
             SaveStatus.Foreground = Brush("#526B4C");
             SaveIndicator.Content = "✓";
@@ -262,6 +300,7 @@ public partial class NoteWindow : Window
             _note.Title = oldTitle;
             _note.Color = oldColor;
             _note.Blocks = oldBlocks;
+            _note.MarkdownSource = oldMarkdown;
             _note.ModifiedAt = oldModified;
             SaveStatus.Text = "保存失败 · Ctrl+S 重试";
             SaveStatus.Foreground = Brush("#AF343C");
@@ -281,7 +320,9 @@ public partial class NoteWindow : Window
     {
         _loading = true;
         _imageViewer?.Close();
+        _markdownBitmaps.Clear();
         Editor.Document = new FlowDocument();
+        MarkdownEditor.LoadSource("");
         TitleBox.Clear(); HeaderTitle.Text = ""; Title = "Sticky";
     }
     public void CaptureWindowState()
@@ -299,6 +340,8 @@ public partial class NoteWindow : Window
         if (!SaveNow()) { e.Cancel = true; return; }
         _saveTimer.Stop();
         _layoutTimer.Stop();
+        _zoomBadgeTimer.Stop();
+        SaveContentZoom();
         CaptureWindowState();
         _state.IsOpen = _workspace.IsExiting && _note.DeletedAt is null;
         if (!_workspace.IsExiting) _workspace.SaveDevice();
@@ -325,7 +368,7 @@ public partial class NoteWindow : Window
 
     private void OpenMenu(object sender, RoutedEventArgs e)
     {
-        var menu = BuildNoteMenu(); menu.PlacementTarget = MoreButton; menu.IsOpen = true;
+        var menu = BuildNoteMenu(); MoreButton.ContextMenu = menu; menu.PlacementTarget = MoreButton; menu.IsOpen = true;
     }
     private void SetNoteColor(string key)
     {
@@ -342,7 +385,7 @@ public partial class NoteWindow : Window
             var item = new MenuItem { Header = label, IsCheckable = true, IsChecked = key == _color,
                 Icon = new Border { Width = 15, Height = 15, CornerRadius = new CornerRadius(2),
                     Background = Brush(NotePalette.Background(key)), BorderBrush = Brush("#80908B80"), BorderThickness = new Thickness(1) } };
-            item.Click += (_, _) => { SetNoteColor(key); Activate(); Editor.Focus(); };
+            item.Click += (_, _) => { SetNoteColor(key); Activate(); FocusBody(); };
             menu.Items.Add(item);
         }
         menu.Opened += (_, _) => { _menuOpen = true; UpdateHeaderState(); };
@@ -368,6 +411,7 @@ public partial class NoteWindow : Window
             Add("编辑便签    F2", EnterEditMode);
             Add("完成编辑    Esc", FinishEditing);
             Add("修改标题…", RenameTitle);
+            Add(_note.IsMarkdown ? "转换为富文本…" : "转换为 Markdown…", ConvertNoteFormat);
             var move = new MenuItem { Header = _workspace.IsVaultNote(_note.Id) ? "保险箱" : "移动到分组 · " + _workspace.GroupName(_note.GroupId) };
             NoteMenus.FillMoveItems(move.Items, _workspace, _note); menu.Items.Add(move);
             var colors = new MenuItem { Header = "便签颜色" };
@@ -377,20 +421,21 @@ public partial class NoteWindow : Window
                 item.Click += (_, _) => SetNoteColor(key); colors.Items.Add(item);
             }
             menu.Items.Add(colors);
+            menu.Items.Add(BuildZoomMenu());
             var fontSize = new MenuItem { Header = "字号" };
             foreach (var size in new[] { 14, 16, 18, 22, 28 })
             {
                 var item = new MenuItem { Header = size.ToString() };
                 item.Click += (_, _) => { EnterEditMode(); Editor.Selection.ApplyPropertyValue(TextElement.FontSizeProperty, (double)size); }; fontSize.Items.Add(item);
             }
-            menu.Items.Add(fontSize);
+            if (!_note.IsMarkdown) menu.Items.Add(fontSize);
             var foreground = new MenuItem { Header = "文字颜色" };
             foreach (var (label, color) in new[] { ("默认", "#ECECEC"), ("红色", "#FF9EAD"), ("绿色", "#ADE0B0"), ("蓝色", "#9FCBFF") })
             {
                 var item = new MenuItem { Header = label };
                 item.Click += (_, _) => { EnterEditMode(); Editor.Selection.ApplyPropertyValue(TextElement.ForegroundProperty, Brush(color)); }; foreground.Items.Add(item);
             }
-            menu.Items.Add(foreground);
+            if (!_note.IsMarkdown) menu.Items.Add(foreground);
             var pin = new MenuItem { Header = "始终置顶", IsCheckable = true, IsChecked = Topmost };
             pin.Click += (_, _) => { Topmost = !Topmost; LayoutChanged(this, EventArgs.Empty); }; menu.Items.Add(pin);
             menu.Items.Add(new Separator());
@@ -461,6 +506,15 @@ public partial class NoteWindow : Window
     {
         EnterEditMode();
         var id = DocumentCodec.StoreBitmap(bitmap, _workspace.StoreFor(_note));
+        if (_note.IsMarkdown)
+        {
+            var start = MarkdownEditor.SelectionStart;
+            var syntax = MarkdownBody.ImageSyntax(id, Math.Min(280, bitmap.PixelWidth));
+            MarkdownEditor.SelectedText = syntax;
+            MarkdownEditor.Select(start + syntax.Length, 0);
+            FocusBody();
+            return;
+        }
         var image = DocumentCodec.CreateImage(id, Math.Min(280, bitmap.PixelWidth), _workspace.StoreFor(_note));
         Editor.BeginChange();
         try
@@ -472,6 +526,7 @@ public partial class NoteWindow : Window
         }
         finally { Editor.EndChange(); }
         AttachImageMenu(image);
+        FitBodyImage(image, Editor.ViewportWidth);
         MarkDirty();
         UpdateCounters();
         Editor.Focus();
@@ -493,6 +548,14 @@ public partial class NoteWindow : Window
             else if (Clipboard.ContainsImage() && Clipboard.GetImage() is { } bitmap) InsertBitmap(bitmap);
             else if (Clipboard.ContainsText())
             {
+                if (_note.IsMarkdown)
+                {
+                    var start = MarkdownEditor.SelectionStart;
+                    var text = Clipboard.GetText();
+                    MarkdownEditor.SelectedText = text;
+                    MarkdownEditor.Select(start + text.Length, 0);
+                    return;
+                }
                 Editor.BeginChange();
                 try { Editor.Selection.Text = Clipboard.GetText(); Editor.CaretPosition = Editor.Selection.End; }
                 finally { Editor.EndChange(); }
@@ -512,8 +575,17 @@ public partial class NoteWindow : Window
     {
         if (e.Data.GetData(DataFormats.FileDrop) is string[] files)
         {
-            var position = Editor.GetPositionFromPoint(e.GetPosition(Editor), true);
-            if (position is not null) Editor.CaretPosition = position;
+            if (_note.IsMarkdown)
+            {
+                EnterEditMode();
+                if (MarkdownEditor.GetPositionFromPoint(e.GetPosition(MarkdownEditor)) is { } position)
+                    MarkdownEditor.Select(MarkdownEditor.Document.GetOffset(position.Location), 0);
+            }
+            else
+            {
+                var position = Editor.GetPositionFromPoint(e.GetPosition(Editor), true);
+                if (position is not null) Editor.CaretPosition = position;
+            }
             InsertImageFiles(files);
         }
         e.Handled = true;

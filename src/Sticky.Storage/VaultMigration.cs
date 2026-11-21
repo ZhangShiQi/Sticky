@@ -42,7 +42,7 @@ public sealed class VaultMigration
                     try { history.Add(NoteStore.ParseNote(bytes, note.Id)); }
                     catch (Exception ex) when (ex is JsonException or InvalidDataException or NoteStore.UnsupportedVersionException) { /* Preserve unreadable source inside the encrypted archive. */ }
                 }
-        var assets = history.Append(note).SelectMany(n => VaultStore.ImageIds(n.Blocks)).Distinct()
+        var assets = history.Append(note).SelectMany(n => n.GetImageIds()).Distinct()
             .ToDictionary(id => id, id => File.ReadAllBytes(_store.GetAssetPath(id)));
         // Encrypted destination must be durable before marking or touching the source.
         vault.Save(note, assets, history, sourceBackups);
@@ -70,6 +70,7 @@ public sealed class VaultMigration
         foreach (var id in ids)
         {
             foreach (var extra in Directory.EnumerateFiles(_store.NotesDirectory, id + ".json.*")) File.Delete(extra);
+            _store.RemoveNoteZoom(id);
         }
         // Retain images referenced by other ordinary notes, backups or historical objects.
         var retained = new HashSet<string>();

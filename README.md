@@ -4,7 +4,7 @@
 
 ## 使用 Windows 便携版
 
-从 [GitHub Releases](https://github.com/ZhangShiQi/Sticky/releases) 获取已发布的 Windows x64 便携包，或自行打包生成 `dist/Sticky-0.8.0-win-x64-portable.zip`，完整解压后双击根目录的 `Sticky.exe`。目标电脑不需要安装 .NET SDK、.NET Runtime 或 Git。请保留随包的 `tools` 文件夹，包含 WPF 程序、Git 和 Git Credential Manager。源码仓库不包含发布包；从源码获取后，可按下文运行打包脚本生成。当前源码版本为 0.8.0，已发布版本与更新记录见 Releases。
+从 [GitHub Releases](https://github.com/ZhangShiQi/Sticky/releases) 获取已发布的 Windows x64 便携包，或自行打包生成 `dist/Sticky-0.9.0-win-x64-portable.zip`，完整解压后双击根目录的 `Sticky.exe`。目标电脑不需要安装 .NET SDK、.NET Runtime 或 Git。请保留随包的 `tools` 文件夹，包含 WPF 程序、Git 和 Git Credential Manager。当前源码版本为 0.9.0，已发布版本与更新记录见 Releases。
 
 便携版自动将数据存到 exe 旁边的 `Data`，不依赖当前工作目录，也不读取开发预览 `.local-demo` 中的便签。发布包是空白工作空间，不包含开发机上的便签、仓库配置、Git 历史或凭据。原有便签可先导出 ZIP，再在便携版导入。
 
@@ -112,6 +112,8 @@ git commit -m "Release 0.2.1"
 
 ## 本地版已实现
 
+- 新建便签默认使用 Markdown，可在「设置 → 编辑与排版」改为富文本。编辑 Markdown 时当前行保留源码，光标离开该行后渲染。便签「···」提供双向转换和预览，可从历史恢复转换前的版本。
+- 每张便签可通过 Ctrl+滚轮、Ctrl+=、Ctrl+- 或「··· → 内容缩放」独立调整正文大小，按 Ctrl+0 恢复到 100%。
 - 多个独立便签窗口；同一便签只打开一个窗口。
 - 管理页便签数量旁可在「内容预览」与「标题标签」间切换，默认预览；标题模式仅显示彩色标题标签，单击打开，右键支持移动分组、删除、恢复及历史。切换不改变当前分组或回收站过滤，选择保存在本机 `Data/device/manager.json`，重启保留，不参与 GitHub 同步。
 - 管理页采用虚拟化换行和控件回收，仅创建可见区域与相邻行的控件；刷新复用卡片，无变化不重建集合，分组计数一次遍历，预览只在需要时提取最多 240 字符。5,000 条合成便签、100 个分组的本机 WPF 测试中，默认窗口预览模式创建 8 个容器、标题模式 33 个；管理页显示约 187 ms、切换约 39 ms、无变化刷新中位数约 1.7 ms。测量不包含磁盘加载，耗时随设备和窗口尺寸变化。启动仍读取本地便签与历史，大量正文、图片、历史和数千个独立编辑窗口需另外评估；本次优化针对管理页。

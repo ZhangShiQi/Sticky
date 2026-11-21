@@ -7,6 +7,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
 using Sticky.App;
+using Sticky.App.Editor;
 using Sticky.Core;
 using Sticky.Storage;
 using Sticky.Sync.Git;
@@ -190,14 +191,22 @@ internal static partial class Program
             workspace.Vault.Unlock(VaultPassword); workspace.RefreshPrivateNotes();
             Check(workspace.PrivateNotes.Single().Title == "写入失败后仍需保留的编辑", "Retry lost edits.");
             workspace.CreateVaultNote(); Check(workspace.PrivateNotes.Count == 2 && workspace.Notes.Count == 0, "Private new note escaped vault.");
+            var markdown = workspace.PrivateNotes.Single(n => n.IsMarkdown);
+            var markdownWindow = workspace.Windows[markdown.Id];
+            var source = (MarkdownLiveEditor)markdownWindow.FindName("MarkdownEditor");
+            const string privateSource = "**private-markdown-source**";
+            source.Text = privateSource;
+            Check(markdownWindow.SaveNow(false) && workspace.Vault.Notes.Single(n => n.Id == markdown.Id).MarkdownSource == privateSource,
+                "The vault did not save Markdown source.");
             foreach (var file in Directory.EnumerateFiles(workspace.Store.Root, "*", SearchOption.AllDirectories).Where(p => !p.EndsWith("writer.lock")))
             {
                 var text = Encoding.UTF8.GetString(File.ReadAllBytes(file));
-                Check(!text.Contains("写入失败后仍需保留") && !text.Contains("更新后的私密内容"), "Plaintext leaked to " + file);
+                Check(!text.Contains("写入失败后仍需保留") && !text.Contains("更新后的私密内容") && !text.Contains(privateSource), "Plaintext leaked to " + file);
             }
             Check(workspace.Device.Windows.Count == 0, "Private windows leaked to startup layout.");
             typeof(VaultWindow).GetField("_lastInput", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.SetValue(controller, DateTimeOffset.UtcNow.AddMinutes(-6));
             Pump(2300); Check(!workspace.Vault.IsUnlocked && model.Cards.Count == 0, "Idle lock failed.");
+            Check(source.Text.Length == 0 && markdown.MarkdownSource is null, "Lock retained private Markdown source.");
         }
         finally { workspace.PrepareExit(); }
     }

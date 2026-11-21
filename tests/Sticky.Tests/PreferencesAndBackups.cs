@@ -13,6 +13,7 @@ internal static partial class Program
     private static void TypographyPreferences()
     {
         var workspace = new StickyWorkspace(Path.Combine(_root, "typography"));
+        workspace.UpdateEditorPreferences(new EditorPreferences { NewNoteFormat = "richText" });
         var note = new Note { Blocks = [new NoteBlock { Inlines = [
             new NoteInline { Text = "旧版默认文字" },
             new NoteInline { Text = "手动大字", FontSize = 28 },

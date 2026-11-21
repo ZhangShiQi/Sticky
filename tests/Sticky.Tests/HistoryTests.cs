@@ -153,6 +153,7 @@ internal static partial class Program
         var workspace = new StickyWorkspace(Path.Combine(_root, "history-ui"));
         try
         {
+            workspace.UpdateEditorPreferences(new EditorPreferences { NewNoteFormat = "richText" });
             workspace.CreateNote(); var note = workspace.Notes.Single(); var window = workspace.Windows[note.Id];
             var editor = (RichTextBox)window.FindName("Editor"); editor.AppendText("周末出行计划\n带相机和一瓶水"); Check(window.SaveNow(false), "Initial history edit did not save.");
             var oldSequence = workspace.Store.History.ReadTimeline().Events.Last(e => e.Target.StartsWith("notes/", StringComparison.Ordinal)).Sequence;

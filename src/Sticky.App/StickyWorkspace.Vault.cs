@@ -55,7 +55,7 @@ public sealed partial class StickyWorkspace
     public void CreateVaultNote(NoteWindow? near = null)
     {
         if (!Vault.IsUnlocked || VaultViewsHidden) return;
-        var note = new Note { Color = EditorPreferences.RandomizeNewNoteColor ? ViewModels.NotePalette.Choices[Random.Shared.Next(ViewModels.NotePalette.Choices.Count)].Key : "amber" };
+        var note = NewNote();
         try { Vault.Save(note); _privateIds.Add(note.Id); PrivateNotes.Insert(0, note); NotifyChanged(); OpenNote(note, true, near); }
         catch (Exception ex) { ShowError("无法创建私密便签", ex); }
     }
@@ -75,7 +75,7 @@ public sealed partial class StickyWorkspace
             return false;
         }
         foreach (var window in windows) { window.Close(); window.ClearPrivateContent(); }
-        foreach (var note in PrivateNotes) { note.Title = ""; note.Blocks = []; }
+        foreach (var note in PrivateNotes) { note.Title = ""; note.SetRichText([]); }
         PrivateNotes.Clear(); _vaultWindows.Clear(); Vault.Lock(); VaultViewsHidden = false; NotifyChanged();
         return true;
     }
@@ -117,7 +117,7 @@ public sealed partial class StickyWorkspace
         foreach (var id in snapshot.Notes.Where(p => moved.Contains(p.Key) || p.Value.ConflictOf is { } source && moved.Contains(source)).Select(p => p.Key).ToArray())
             snapshot.Notes.Remove(id);
         foreach (var transfer in VaultMigrations.Transfers) snapshot.Notes[transfer.Id] = VaultMigrations.Tombstone(transfer);
-        var used = snapshot.Notes.Values.SelectMany(n => VaultStore.ImageIds(n.Blocks)).ToHashSet();
+        var used = snapshot.Notes.Values.SelectMany(n => n.GetImageIds()).ToHashSet();
         foreach (var asset in snapshot.Assets.Keys.Where(id => !used.Contains(id)).ToArray()) snapshot.Assets.Remove(asset);
     }
 }

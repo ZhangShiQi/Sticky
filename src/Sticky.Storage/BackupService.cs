@@ -91,7 +91,7 @@ public static class BackupService
                 // A backup cannot attach a note to an unrelated local group with a colliding ID.
                 note.GroupId = groupMap.TryGetValue(groupId, out var mapped) ? mapped : null;
             }
-            foreach (var id in ImageIds(note.Blocks))
+            foreach (var id in note.GetImageIds())
                 if (!assets.ContainsKey(id) && !File.Exists(store.GetAssetPath(id)))
                     throw new InvalidDataException("备份缺少图片：" + id);
             if (File.Exists(Path.Combine(store.NotesDirectory, note.Id + ".json")))
@@ -127,12 +127,4 @@ public static class BackupService
         return notes;
     }
 
-    private static IEnumerable<string> ImageIds(IEnumerable<NoteBlock> blocks)
-    {
-        foreach (var block in blocks)
-        {
-            foreach (var inline in block.Inlines) if (inline.Kind == "image" && inline.AssetId is { } id) yield return id;
-            foreach (var id in ImageIds(block.Children)) yield return id;
-        }
-    }
 }

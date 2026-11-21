@@ -24,6 +24,7 @@ public partial class HistoryWindow : Window
     private List<HistoryNoteChoice> _choices = [];
     private HistoryFrame? _frame;
     private Note? _snapshot;
+    private (Note Note, IReadOnlyList<NoteGroup> Groups, long Sequence)? _beforeConversion;
     private Guid? _detailNote;
     private bool _loading = true, _playing, _initialized;
     public int FrameIndex => (int)ProgressSlider.Value;
@@ -172,6 +173,7 @@ public partial class HistoryWindow : Window
         catch (Exception ex)
         {
             _loading = false; Pause(); _frame = null; _snapshot = null;
+            _beforeConversion = null; RestoreBeforeConversionButton.Visibility = Visibility.Collapsed;
             RestoreCopyButton.IsEnabled = RestoreCurrentButton.IsEnabled = false;
             SnapshotPanel.Children.Clear(); BeforePreview.Document = new(); AfterPreview.Document = new();
             StatusText.Text = "历史预览未完成：" + ex.Message + " 当前数据未被修改。";
@@ -202,7 +204,7 @@ public partial class HistoryWindow : Window
             var footer = new TextBlock { Text = note is null ? "此时尚未创建，或已被移除" : group + (note.DeletedAt is not null ? " · 已移入回收站" : ""),
                 Foreground = Paint("#BAC2B5"), FontSize = 11, Margin = new Thickness(10, 6, 10, 10), TextWrapping = TextWrapping.Wrap };
             DockPanel.SetDock(footer, Dock.Bottom); content.Children.Add(footer);
-            var body = new RichTextBox { Document = note is null ? Preview(null) : DocumentCodec.Decode(Excerpt(note.Blocks), _workspace.Store, darkTheme: true, _workspace.EditorPreferences),
+            var body = new RichTextBox { Document = note is null ? Preview(null) : DocumentCodec.Decode(Excerpt(note.GetBodyBlocks()), _workspace.Store, darkTheme: true, _workspace.EditorPreferences, note.IsMarkdown),
                 IsReadOnly = true, IsDocumentEnabled = false, AllowDrop = false, IsHitTestVisible = false, Background = Brushes.Transparent, BorderThickness = new Thickness(0),
                 Padding = new Thickness(8), Height = 170, VerticalScrollBarVisibility = ScrollBarVisibility.Hidden, Opacity = note?.DeletedAt is not null ? 0.6 : 1 };
             content.Children.Add(body); card.Child = content; SnapshotPanel.Children.Add(card);
@@ -219,10 +221,10 @@ public partial class HistoryWindow : Window
         var columns = Math.Max(1, (int)(width / 260));
         foreach (Border card in SnapshotPanel.Children) card.Width = Math.Max(1, width / columns - 10);
     }
-    private static List<NoteBlock> Excerpt(List<NoteBlock> original)
+    private static List<NoteBlock> Excerpt(IReadOnlyList<NoteBlock> original)
     {
         var remaining = 1400; var blocks = 12; var images = 1;
-        List<NoteBlock> Copy(List<NoteBlock> source)
+        List<NoteBlock> Copy(IReadOnlyList<NoteBlock> source)
         {
             var result = new List<NoteBlock>();
             foreach (var block in source)
@@ -235,7 +237,8 @@ public partial class HistoryWindow : Window
                     if (remaining <= 0) break;
                     var text = inline.Text[..Math.Min(remaining, inline.Text.Length)]; remaining -= text.Length;
                     next.Inlines.Add(new NoteInline { Text = text, Bold = inline.Bold, Italic = inline.Italic, Underline = inline.Underline, Strike = inline.Strike,
-                        Foreground = inline.Foreground, FontSize = inline.FontSize, UsesDefaultFontSize = inline.UsesDefaultFontSize });
+                        Foreground = inline.Foreground, FontSize = inline.FontSize, UsesDefaultFontSize = inline.UsesDefaultFontSize,
+                        MarkdownCode = inline.MarkdownCode });
                 }
                 next.Children = Copy(block.Children); result.Add(next);
             }
@@ -247,11 +250,14 @@ public partial class HistoryWindow : Window
     {
         if (_timeline is null || _frame is null) return;
         _snapshot = null;
+        _beforeConversion = null;
+        RestoreBeforeConversionButton.Visibility = Visibility.Collapsed;
         RestoreCopyButton.IsEnabled = RestoreCurrentButton.IsEnabled = false;
         if (id is null)
         {
             _detailNote = null; DetailHeading.Text = "从左侧选择一张便签"; DetailTime.Text = "";
             ChangesText.Text = "主时间线保留全部便签的变化。勾选便签或点击内容卡片查看详情。";
+            BeforeLabel.Text = "修改前"; AfterLabel.Text = "该版本";
             BeforePreview.Document = Preview(null); AfterPreview.Document = Preview(null); return;
         }
         var row = _rows.LastOrDefault(r => r.Sequence <= _frame.Sequence && r.Last.NoteIds.Contains(id.Value)) ?? _rows[0];
@@ -264,6 +270,8 @@ public partial class HistoryWindow : Window
         DetailTime.Text = row.Last.Time.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") + " · " + HistoryDescriptions.SourceLabel(row.Last.Source);
         if (row.Last.Source == "sync" && current is not null) DetailTime.Text += " · 原内容修改于 " + current.ModifiedAt.ToLocalTime().ToString("MM-dd HH:mm:ss");
         BeforePreview.Document = Preview(previous); AfterPreview.Document = Preview(current);
+        BeforeLabel.Text = previous is null ? "修改前" : "修改前 · " + previous.FormatLabel;
+        AfterLabel.Text = current is null ? "该版本" : "该版本 · " + current.FormatLabel;
         var changes = previous is not null && current is not null ? HistoryDescriptions.TextDifference(previous.PlainText, current.PlainText) : default;
         ChangesText.Text = row.Heading + "\n" + row.Description + "\n\n" + string.Join("\n\n", row.First.Changes.Concat(row.Last.Changes).Distinct())
             + (changes.Removed?.Length > 0 ? "\n\n删除文字：\n" + changes.Removed : "") + (changes.Added?.Length > 0 ? "\n\n新增文字：\n" + changes.Added : "")
@@ -276,9 +284,14 @@ public partial class HistoryWindow : Window
         }
         RestoreCopyButton.IsEnabled = _snapshot is not null;
         RestoreCurrentButton.IsEnabled = _snapshot is not null && _workspace.Notes.Any(n => n.Id == _snapshot.Id);
+        if (row.Last.Kind == "noteFormatConverted" && previous is not null && RestoreCurrentButton.IsEnabled)
+        {
+            _beforeConversion = (previous, before.Groups, before.Sequence);
+            RestoreBeforeConversionButton.Visibility = Visibility.Visible;
+        }
     }
     private FlowDocument Preview(Note? note) => note is null ? new FlowDocument(new Paragraph(new Run("此时没有这张便签"))) { Foreground = Brushes.LightGray }
-        : DocumentCodec.Decode(note.Blocks, _workspace.Store, darkTheme: true, _workspace.EditorPreferences);
+        : DocumentCodec.Decode(note, _workspace.Store, darkTheme: true, _workspace.EditorPreferences);
     private void RestoreCopy(object sender, RoutedEventArgs e) => Restore(asCopy: true);
     private void ExportHistory(object sender, RoutedEventArgs e)
     {
@@ -293,10 +306,22 @@ public partial class HistoryWindow : Window
         Pause();
         if (MessageBox.Show(this, "将用选中的历史内容替换当前便签。当前内容会保留在时间轴中，之后仍可恢复。", "恢复历史版本", MessageBoxButton.OKCancel, MessageBoxImage.Question) == MessageBoxResult.OK) Restore(asCopy: false);
     }
+    private void RestoreBeforeConversion(object sender, RoutedEventArgs e)
+    {
+        Pause();
+        if (_beforeConversion is not { } original) return;
+        if (MessageBox.Show(this, $"恢复转换前的{original.Note.FormatLabel}正文与便签属性？当前版本会保留在历史中。",
+            "恢复转换前的版本", MessageBoxButton.OKCancel, MessageBoxImage.Question) == MessageBoxResult.OK)
+            Restore(original.Note, original.Groups, original.Sequence, asCopy: false);
+    }
     private void Restore(bool asCopy)
     {
         Pause(); if (_snapshot is null || _frame is null) return;
-        try { _workspace.RestoreHistoryNote(_snapshot, _frame.Groups, _rows[FrameIndex].Sequence, asCopy); RefreshTimeline(); StatusText.Text = asCopy ? "已恢复为新便签，原便签保持不变。" : "已恢复所选内容；本次恢复也已记入时间轴。"; }
+        Restore(_snapshot, _frame.Groups, _frame.Sequence, asCopy);
+    }
+    private void Restore(Note snapshot, IReadOnlyList<NoteGroup> groups, long sequence, bool asCopy)
+    {
+        try { _workspace.RestoreHistoryNote(snapshot, groups, sequence, asCopy); RefreshTimeline(); StatusText.Text = asCopy ? "已恢复为新便签，原便签保持不变。" : "已恢复所选内容；本次恢复也已记入时间轴。"; }
         catch (Exception ex) { StatusText.Text = "恢复未完成：" + ex.Message; }
     }
     private IEnumerable<int> PlaybackIndices()

@@ -58,6 +58,11 @@
           <TextBlock Text="编辑与排版" FontSize="26" FontWeight="SemiBold" />
           <TextBlock Text="统一调整这台设备上的便签显示。" Foreground="{StaticResource Muted}" Margin="0,8,0,28" />
           <TextBlock Text="新建与交互" FontWeight="SemiBold" FontSize="16" Margin="0,0,0,14" />
+          <Label Content="新建便签格式" Target="{Binding ElementName=NewNoteFormatBox}" Padding="0" Margin="0,0,0,6" />
+          <ComboBox x:Name="NewNoteFormatBox" SelectedValuePath="Tag" HorizontalAlignment="Left" MinWidth="160" Margin="0,0,0,16" AutomationProperties.Name="新建便签格式">
+            <ComboBoxItem Content="Markdown" Tag="markdown" />
+            <ComboBoxItem Content="富文本" Tag="richText" />
+          </ComboBox>
           <CheckBox x:Name="RandomColorCheckBox" Content="新建便签时随机颜色" AutomationProperties.Name="新建便签时随机颜色" Margin="0,0,0,10" />
           <TextBlock Text="默认开启，从五种便签颜色中随机选择；关闭后新便签使用暖黄，已有便签颜色保持原样。" TextWrapping="Wrap" Foreground="{StaticResource Muted}" LineHeight="22" Margin="0,0,0,18" />
           <CheckBox x:Name="AutoHideHeaderCheckBox" Content="自动隐藏便签标题栏" AutomationProperties.Name="自动隐藏便签标题栏" Margin="0,0,0,10" />

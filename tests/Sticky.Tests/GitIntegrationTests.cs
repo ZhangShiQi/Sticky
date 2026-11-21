@@ -96,6 +96,17 @@ internal static class GitIntegrationTests
         Check(!(await f.B.Sync()).Uploaded, "Recovering a corrupt sync baseline changed remote content.");
         File.Delete(baseline);
         Check(!(await f.B.Sync()).Uploaded, "A backup-only sync baseline was not recovered.");
+
+        var secondAsset = f.A.Store.AddImage([.. File.ReadAllBytes(f.A.Store.GetAssetPath(image)), 0]);
+        note.SetMarkdown("# 跨设备同步\n\n" + MarkdownBody.ImageSyntax(secondAsset, 240));
+        note.ModifiedAt = DateTimeOffset.UtcNow;
+        f.A.Store.Save(note);
+        await f.A.Sync(); await f.B.Sync();
+        downloaded = f.B.Store.LoadNotes().Single();
+        Check(downloaded.Id == note.Id && downloaded.IsMarkdown && downloaded.MarkdownSource == note.MarkdownSource
+            && downloaded.GetImageIds().Single() == secondAsset && File.Exists(f.B.Store.GetAssetPath(secondAsset)),
+            "Sync lost the new format, its source, or its attachment.");
+        Check(!(await f.B.Sync()).Uploaded, "Unchanged Markdown triggered another sync commit.");
     }
 
     public static async Task Conflict(string root)

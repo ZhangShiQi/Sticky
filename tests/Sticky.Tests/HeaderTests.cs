@@ -16,6 +16,7 @@ internal static partial class Program
         var workspace = new StickyWorkspace(Path.Combine(_root, "header-titles"));
         try
         {
+            workspace.UpdateEditorPreferences(new EditorPreferences { NewNoteFormat = "richText" });
             workspace.CreateNote(); var note = workspace.Notes[0]; var window = workspace.Windows[note.Id]; Pump(25);
             var editor = (RichTextBox)window.FindName("Editor"); var titleBox = (TextBox)window.FindName("TitleBox");
             var title = (TextBlock)window.FindName("HeaderTitle"); var header = (Border)window.FindName("HeaderBar");

@@ -93,7 +93,8 @@ public sealed partial class NoteStore
     {
         var note = JsonSerializer.Deserialize<Note>(bytes, JsonOptions)
                    ?? throw new InvalidDataException("便签内容为空。");
-        if (note.SchemaVersion != 1) throw new UnsupportedVersionException("此便签需要其他版本的 Sticky 才能读取");
+        if (note.SchemaVersion is not (Note.RichTextVersion or Note.MarkdownVersion))
+            throw new UnsupportedVersionException("此便签需要其他版本的 Sticky 才能读取");
         if (note.Id != expectedId) throw new InvalidDataException("便签标识不匹配。");
         Validate(note);
         return note;
@@ -103,7 +104,8 @@ public sealed partial class NoteStore
     {
         Validate(note);
         if (_vault is not null) { _vault.Save(note); return; }
-        if ((note.Title.Length != 0 || note.Blocks.Count != 0 || note.DeletedAt is null) && new VaultMigration(this).MovedIds.Contains(note.Id))
+        if ((note.Title.Length != 0 || note.Blocks.Count != 0 || note.MarkdownSource is not null || note.DeletedAt is null)
+            && new VaultMigration(this).MovedIds.Contains(note.Id))
             throw new InvalidOperationException("此便签已移入保险箱，不能将旧版本恢复为明文；请使用保险箱。需要明文副本时请从保险箱移出。");
         var bytes = JsonSerializer.SerializeToUtf8Bytes(note, JsonOptions);
         if (bytes.Length > 20 * 1024 * 1024) throw new InvalidDataException("便签正文超过 20 MB，请拆分为多张便签。");
@@ -112,7 +114,9 @@ public sealed partial class NoteStore
 
     private static void Validate(Note note)
     {
-        if (note.SchemaVersion != 1 || note.Id == Guid.Empty || note.Title is null || note.Title.Length > 500 || note.Blocks is null)
+        if (note.SchemaVersion is not (Note.RichTextVersion or Note.MarkdownVersion)
+            || note.Id == Guid.Empty || note.Title is null || note.Title.Length > 500 || note.Blocks is null
+            || (note.IsMarkdown ? note.MarkdownSource is null || note.Blocks.Count != 0 : note.MarkdownSource is not null))
             throw new InvalidDataException("便签格式无效。");
         ValidateBlocks(note.Blocks, 0);
     }

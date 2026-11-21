@@ -84,13 +84,20 @@ public sealed partial class StickyWorkspace
 
     public void CreateNote(Guid? groupId = null, NoteWindow? near = null)
     {
-        var note = new Note { GroupId = groupId,
-            Color = EditorPreferences.RandomizeNewNoteColor ? NotePalette.Choices[Random.Shared.Next(NotePalette.Choices.Count)].Key : "amber" };
+        var note = NewNote(groupId);
         try { StoreFor(note).Save(note); }
         catch (Exception ex) { ShowError("无法创建便签", ex); return; }
         Notes.Insert(0, note);
         NotifyChanged();
         OpenNote(note, edit: true, near);
+    }
+
+    private Note NewNote(Guid? groupId = null)
+    {
+        var note = new Note { GroupId = groupId,
+            Color = EditorPreferences.RandomizeNewNoteColor ? NotePalette.Choices[Random.Shared.Next(NotePalette.Choices.Count)].Key : "amber" };
+        if (EditorPreferences.NewNoteFormat == "markdown") note.SetMarkdown("");
+        return note;
     }
 
     public void OpenNote(Note note, bool edit = false, NoteWindow? near = null)
@@ -200,7 +207,7 @@ public sealed partial class StickyWorkspace
         if (!SaveAllNotes()) return false;
         var saved = new EditorPreferences { DefaultFontSize = preferences.DefaultFontSize, ParagraphSpacing = preferences.ParagraphSpacing,
             RandomizeNewNoteColor = preferences.RandomizeNewNoteColor, ShowHeaderOnHover = preferences.ShowHeaderOnHover,
-            AutoHideHeader = preferences.AutoHideHeader };
+            AutoHideHeader = preferences.AutoHideHeader, NewNoteFormat = preferences.NewNoteFormat };
         Store.SaveEditorPreferences(saved);
         EditorPreferences = saved;
         foreach (var window in Windows.Values) window.ApplyEditorPreferences(saved);
@@ -248,7 +255,7 @@ public sealed partial class StickyWorkspace
         next.CreatedAt = asCopy ? now : existing!.CreatedAt;
         next.ModifiedAt = now; next.DeletedAt = null;
         if (asCopy) { next.Title = snapshot.DisplayTitle[..Math.Min(snapshot.DisplayTitle.Length, 480)] + "（历史副本）"; next.ConflictOf = null; }
-        foreach (var image in HistoryImages(next.Blocks).Distinct())
+        foreach (var image in next.GetImageIds().Distinct())
         {
             var path = Store.GetAssetPath(image);
             if (!System.IO.File.Exists(path) || Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(System.IO.File.ReadAllBytes(path))) + ".png" != image)
@@ -262,20 +269,11 @@ public sealed partial class StickyWorkspace
         }
         Store.Save(next);
         if (asCopy) { Notes.Insert(0, next); NotifyChanged(); OpenNote(next); return next; }
-        existing!.Title = next.Title; existing.Color = next.Color; existing.Blocks = next.Blocks; existing.GroupId = next.GroupId;
+        existing!.Title = next.Title; existing.Color = next.Color; existing.CopyBodyFrom(next); existing.GroupId = next.GroupId;
         existing.ModifiedAt = next.ModifiedAt; existing.DeletedAt = null; existing.ConflictOf = next.ConflictOf;
         if (Windows.TryGetValue(existing.Id, out var window)) window.ReloadAfterSync(true, "已恢复历史版本");
         NotifyChanged(); OpenNote(existing); return existing;
     }
-    private static IEnumerable<string> HistoryImages(IEnumerable<NoteBlock> blocks)
-    {
-        foreach (var block in blocks)
-        {
-            foreach (var inline in block.Inlines) if (inline.AssetId is { } id) yield return id;
-            foreach (var id in HistoryImages(block.Children)) yield return id;
-        }
-    }
-
     public void ShowSearch(string? query)
     {
         if (!SaveAllNotes()) return;
@@ -345,7 +343,7 @@ public sealed partial class StickyWorkspace
         var final = reconciled.Snapshot;
         ExcludeVaultSources(final);
         GitSyncEngine.ValidateSnapshot(final, checkAssets: false);
-        var usedAssets = final.Notes.Values.SelectMany(n => VaultStore.ImageIds(n.Blocks)).ToHashSet();
+        var usedAssets = final.Notes.Values.SelectMany(n => n.GetImageIds()).ToHashSet();
         foreach (var (id, bytes) in final.Assets.Where(p => usedAssets.Contains(p.Key))) { token.ThrowIfCancellationRequested(); Store.AddImage(bytes); }
         Store.SaveGroups(final.Groups);
         Groups.Clear(); Groups.AddRange(final.Groups);
@@ -358,8 +356,9 @@ public sealed partial class StickyWorkspace
             if (existing is not null && SyncJson.Equal(existing, next)) continue;
             Store.Save(next);
             if (existing is null) { Notes.Add(next); continue; }
-            var reloadBody = !SyncJson.Equal(existing.Blocks, next.Blocks);
-            existing.Title = next.Title; existing.Color = next.Color; existing.Blocks = next.Blocks;
+            var reloadBody = existing.SchemaVersion != next.SchemaVersion || existing.MarkdownSource != next.MarkdownSource
+                || !SyncJson.Equal(existing.Blocks, next.Blocks);
+            existing.Title = next.Title; existing.Color = next.Color; existing.CopyBodyFrom(next);
             existing.GroupId = next.GroupId; existing.ConflictOf = next.ConflictOf;
             existing.CreatedAt = next.CreatedAt; existing.ModifiedAt = next.ModifiedAt; existing.DeletedAt = next.DeletedAt;
             if (Windows.TryGetValue(existing.Id, out var window))

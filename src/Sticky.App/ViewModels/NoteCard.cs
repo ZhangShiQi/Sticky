@@ -14,6 +14,7 @@ public sealed class NoteCard : INotifyPropertyChanged
     private Guid? _conflict;
     private string _manualTitle = "", _color = "";
     private List<NoteBlock>? _blocks;
+    private string? _markdown;
     private string? _title, _preview;
     public event PropertyChangedEventHandler? PropertyChanged;
     public NoteCard(Note note, bool isOpen, string groupName = "未分组")
@@ -21,17 +22,17 @@ public sealed class NoteCard : INotifyPropertyChanged
     public void Update(bool isOpen, string groupName)
     {
         var changed = _modified != Note.ModifiedAt || _deleted != Note.DeletedAt || _conflict != Note.ConflictOf
-            || _manualTitle != Note.Title || _color != Note.Color || !ReferenceEquals(_blocks, Note.Blocks);
+            || _manualTitle != Note.Title || _color != Note.Color || _markdown != Note.MarkdownSource || !ReferenceEquals(_blocks, Note.Blocks);
         var stateChanged = IsOpen != isOpen || GroupName != groupName;
         IsOpen = isOpen; GroupName = groupName;
         if (!changed && !stateChanged) return;
         if (changed) { _title = null; _preview = null; }
         _modified = Note.ModifiedAt; _deleted = Note.DeletedAt; _conflict = Note.ConflictOf;
-        _manualTitle = Note.Title; _color = Note.Color; _blocks = Note.Blocks;
+        _manualTitle = Note.Title; _color = Note.Color; _blocks = Note.Blocks; _markdown = Note.MarkdownSource;
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(""));
     }
-    public string Title => _title ??= !string.IsNullOrWhiteSpace(Note.Title) ? Note.Title.Trim() : ReadText(Note.Blocks, 512, firstLine: true);
-    public string Preview => _preview ??= ReadText(Note.Blocks, 240, firstLine: false);
+    public string Title => _title ??= !string.IsNullOrWhiteSpace(Note.Title) ? Note.Title.Trim() : ReadText(Note.GetBodyBlocks(), 512, firstLine: true);
+    public string Preview => _preview ??= ReadText(Note.GetBodyBlocks(), 240, firstLine: false);
     public string Updated => Note.ModifiedAt.ToLocalTime().ToString("MM/dd HH:mm");
     public string State => Note.DeletedAt is not null ? "已删除" : Note.ConflictOf is not null ? "冲突副本 · 内容已保留" : IsOpen ? "窗口已打开" : "已保存在本地";
     public string Action => Note.DeletedAt is not null ? "恢复便签" : "打开便签 ↗";

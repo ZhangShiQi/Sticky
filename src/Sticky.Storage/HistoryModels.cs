@@ -73,17 +73,23 @@ public static class HistoryDescriptions
                 if (prior.GroupId != next.GroupId) { entry.Kind = "noteMoved"; entry.Changes.Add("移动到其他分组"); }
                 if (prior.DeletedAt is null && next.DeletedAt is not null) { entry.Kind = "noteDeleted"; entry.Changes.Add("移入回收站"); }
                 if (prior.DeletedAt is not null && next.DeletedAt is null) { entry.Kind = "noteRestored"; entry.Changes.Add("从回收站恢复"); }
-                if (!HistoryStore.Equal(prior.Blocks, next.Blocks))
+                if (prior.IsMarkdown != next.IsMarkdown)
+                {
+                    if (entry.Kind == "noteEdited") entry.Kind = "noteFormatConverted";
+                    entry.Changes.Add($"正文格式：{prior.FormatLabel} → {next.FormatLabel}");
+                }
+                if (prior.MarkdownSource != next.MarkdownSource || !HistoryStore.Equal(prior.Blocks, next.Blocks))
                 {
                     var diff = TextDifference(prior.PlainText, next.PlainText);
                     if (diff.Removed.Length > 0) entry.Changes.Add("删除文字：" + diff.Removed);
                     if (diff.Added.Length > 0) entry.Changes.Add("新增文字：" + diff.Added);
-                    if (prior.PlainText == next.PlainText) entry.Changes.Add("调整文字样式、段落或图片布局");
-                    if (!ImageIds(prior.Blocks).SequenceEqual(ImageIds(next.Blocks))) entry.Changes.Add("变更图片");
+                    if (prior.IsMarkdown == next.IsMarkdown && prior.PlainText == next.PlainText)
+                        entry.Changes.Add(next.IsMarkdown ? "修改 Markdown 源码" : "调整文字样式、段落或图片布局");
+                    if (!prior.GetImageIds().SequenceEqual(next.GetImageIds())) entry.Changes.Add("变更图片");
                 }
             }
             if (context.Source == "restore") { entry.Kind = "historyRestored"; entry.Changes.Insert(0, context.Reason ?? "恢复历史版本"); }
-            entry.Summary = (entry.Kind switch { "noteCreated" => "新建", "noteDeleted" => "删除", "noteRestored" => "恢复", "noteMoved" => "移动分组", "historyRestored" => "恢复历史", _ => "修改" }) + " · " + entry.NoteTitle;
+            entry.Summary = (entry.Kind switch { "noteCreated" => "新建", "noteDeleted" => "删除", "noteRestored" => "恢复", "noteMoved" => "移动分组", "historyRestored" => "恢复历史", "noteFormatConverted" => "转换格式", _ => "修改" }) + " · " + entry.NoteTitle;
         }
         else if (target == "groups.json")
         {
@@ -132,13 +138,5 @@ public static class HistoryDescriptions
         if (suffix > 0 && char.IsLowSurrogate(before[before.Length - suffix])) suffix--;
         string Clip(string text) => text.Length > 4000 ? text[..4000] + "…" : text;
         return (Clip(before.Substring(prefix, before.Length - prefix - suffix)), Clip(after.Substring(prefix, after.Length - prefix - suffix)));
-    }
-    private static IEnumerable<string> ImageIds(IEnumerable<NoteBlock> blocks)
-    {
-        foreach (var block in blocks)
-        {
-            foreach (var inline in block.Inlines) if (inline.AssetId is { } id) yield return id;
-            foreach (var id in ImageIds(block.Children)) yield return id;
-        }
     }
 }

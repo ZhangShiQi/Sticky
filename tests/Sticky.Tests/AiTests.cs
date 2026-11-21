@@ -202,6 +202,7 @@ internal static partial class Program
         var workspace = new StickyWorkspace(Path.Combine(_root, "ai-note-ui"), aiClient: new AiClient(handler));
         try
         {
+            workspace.UpdateEditorPreferences(new EditorPreferences { NewNoteFormat = "richText" });
             workspace.AiSettings.Save(AiConfig()); workspace.CreateNote(); var note = workspace.Notes.Single(); var window = workspace.Windows[note.Id];
             var editor = (RichTextBox)window.FindName("Editor");
             var paragraph = new Paragraph(); var target = new Run("这段话嗯表达不太好。");

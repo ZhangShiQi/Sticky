@@ -48,6 +48,9 @@ internal static partial class Program
         Run("Interrupted/corrupt save restores backup and preserves damaged source", BackupRecovery);
         Run("Corrupt notes do not hide healthy notes", CorruptIsolation);
         Run("Unsupported schema is reported without rewriting files", UnsupportedSchema);
+        Run("Markdown default, settings, legacy notes, and backup preserve source and attachments", MarkdownLifecycle);
+        Run("Markdown live editor renders in place and keeps the source, caret and undo intact", MarkdownLiveEditing);
+        Run("Markdown conversion previews both directions and history restores the original", MarkdownConversionHistory);
         Run("Image assets are content-addressed; traversal is rejected", AssetSafety);
         Run("Rich document survives encode/decode including image and inherited styles", DocumentRoundTrip);
         Run("Paragraph layout stays identical after Enter and save/reopen", ParagraphLayout);
@@ -60,6 +63,8 @@ internal static partial class Program
         Run("ZIP backup round-trip and duplicate import preserve existing notes", ZipRoundTrip);
         Run("Unsafe ZIP paths are rejected before writing notes", UnsafeZip);
         Run("Device layout stays outside note content", DeviceRoundTrip);
+        Run("Note zoom reflows both editors and persists independently from content and history", NoteZoomLifecycle);
+        Run("Note zoom for vault notes stays in memory until locking", NoteZoomInVault);
         Run("Multiple windows, debounce autosave, close/reopen, exit/restart", WindowLifecycle);
         Run("New-note button and shortcut open beside the current note and retain the group", NearbyNoteWindows);
         Run("Nearby placement fits monitor edges, negative coordinates and scaling", NearbyPlacementEdges);
@@ -193,7 +198,7 @@ internal static partial class Program
     }
     private static void UnsupportedSchema()
     {
-        var store = Store("future"); var id = Guid.NewGuid(); var json = $"{{\"schemaVersion\":2,\"id\":\"{id}\"}}";
+        var store = Store("future"); var id = Guid.NewGuid(); var json = $"{{\"schemaVersion\":{Note.MarkdownVersion + 1},\"id\":\"{id}\"}}";
         var path = Path.Combine(store.NotesDirectory, id + ".json"); File.WriteAllText(path, json);
         var backup = Example(); backup.Id = id;
         var oldStore = Store("old-version"); oldStore.Save(backup);
@@ -239,7 +244,7 @@ internal static partial class Program
             { ("plain", false, false, 16.0), ("blank-line", false, true, 16.0), ("list", true, false, 22.0), ("large-font", false, false, 28.0) })
         {
             var workspace = new StickyWorkspace(Path.Combine(_root, "paragraph-layout-" + caseName));
-            workspace.UpdateEditorPreferences(new EditorPreferences { DefaultFontSize = fontSize, ParagraphSpacing = caseName == "list" ? 0 : 12 });
+            workspace.UpdateEditorPreferences(new EditorPreferences { DefaultFontSize = fontSize, ParagraphSpacing = caseName == "list" ? 0 : 12, NewNoteFormat = "richText" });
             var main = new MainWindow(workspace); main.Show(); workspace.CreateNote();
             var note = workspace.Notes.Single(); var window = workspace.Windows[note.Id];
             try
@@ -318,6 +323,7 @@ internal static partial class Program
     {
         var path = Path.Combine(_root, "windows");
         var workspace = new StickyWorkspace(path);
+        workspace.UpdateEditorPreferences(new EditorPreferences { NewNoteFormat = "richText" });
         var main = new MainWindow(workspace); main.Show();
         workspace.CreateNote(); workspace.CreateNote();
         Check(workspace.Windows.Count == 2, "Could not open two independent windows.");
@@ -379,12 +385,12 @@ internal static partial class Program
         var workspace = new StickyWorkspace(path);
         var main = new MainWindow(workspace); main.Show(); workspace.CreateNote();
         var note = workspace.Notes.Single(); var window = workspace.Windows[note.Id];
-        var editor = (RichTextBox)window.FindName("Editor");
+        var editor = (MarkdownLiveEditor)window.FindName("MarkdownEditor");
         using (var locked = new FileStream(Path.Combine(workspace.Store.NotesDirectory, note.Id + ".json"), FileMode.Open, FileAccess.Read, FileShare.None))
         {
             editor.AppendText("保存失败后仍然保留"); Pump(900);
             Check(((TextBlock)window.FindName("SaveStatus")).Text.Contains("保存失败"), "Write error was not surfaced.");
-            Check(new TextRange(editor.Document.ContentStart, editor.Document.ContentEnd).Text.Contains("仍然保留"), "Unsaved text was lost.");
+            Check(editor.Text.Contains("仍然保留"), "Unsaved text was lost.");
         }
         Check(window.SaveNow(false), "Retry failed after releasing the lock.");
         Check(new NoteStore(path).LoadNotes().Single().PlainText.Contains("仍然保留"), "Retried save did not persist text.");
@@ -432,15 +438,15 @@ internal static partial class Program
         var workspace = new StickyWorkspace(Path.Combine(_root, "in-flight-editor"));
         var main = new MainWindow(workspace); main.Show(); workspace.CreateNote();
         var note = workspace.Notes.Single(); var window = workspace.Windows[note.Id];
-        var editor = (RichTextBox)window.FindName("Editor");
+        var editor = (MarkdownLiveEditor)window.FindName("MarkdownEditor");
         editor.AppendText("初始正文"); Check(window.SaveNow(false), "Initial save failed.");
         var captured = workspace.CaptureForSync(); var remote = captured.Clone();
-        remote.Notes[note.Id].Blocks = [new NoteBlock { Inlines = [new NoteInline { Text = "远端正在传来的修改" }] }];
+        remote.Notes[note.Id].SetRichText([new NoteBlock { Inlines = [new NoteInline { Text = "远端正在传来的修改" }] }]);
         remote.Notes[note.Id].ModifiedAt = DateTimeOffset.UtcNow;
         window.EnterEditMode(); editor.AppendText("，网络同步时仍然继续输入");
         var applied = workspace.ApplySyncedSnapshot(captured, remote);
         Check(applied.ConflictCount == 1 && workspace.Notes.Count == 2, "Concurrent UI edits did not preserve incoming content as a copy.");
-        Check(note.PlainText.Contains("继续输入") && new TextRange(editor.Document.ContentStart, editor.Document.ContentEnd).Text.Contains("继续输入"), "Sync replaced the active editor's new text.");
+        Check(note.IsMarkdown && note.PlainText.Contains("继续输入") && editor.Text.Contains("继续输入"), "Sync replaced the active editor's new text or format.");
         Check(workspace.Notes.Any(n => n.ConflictOf == note.Id && n.PlainText == "远端正在传来的修改"), "Incoming content was lost.");
         workspace.ShowSyncSettings();
         Check(workspace.Settings?.FindName("SyncHost") is ContentControl { Content: Sticky.App.Synchronization.SyncSettingsView view } && view.FindName("RemoteBox") is TextBox, "Sync configuration UI is unavailable.");

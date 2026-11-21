@@ -113,7 +113,7 @@ public sealed class VaultStore : IDisposable
     public void Remove(Guid id)
     {
         var next = Clone(Require()); next.Notes.RemoveAll(n => n.Id == id); next.History.Remove(id); next.SourceBackups.Remove(id);
-        var used = next.Notes.Concat(next.History.Values.SelectMany(v => v)).SelectMany(n => ImageIds(n.Blocks)).ToHashSet();
+        var used = next.Notes.Concat(next.History.Values.SelectMany(v => v)).SelectMany(n => n.GetImageIds()).ToHashSet();
         foreach (var asset in next.Assets.Keys.Where(a => !used.Contains(a)).ToArray()) next.Assets.Remove(asset);
         Commit(next);
     }
@@ -241,15 +241,7 @@ public sealed class VaultStore : IDisposable
         foreach (var note in payload.Notes.Concat(payload.History.Values.SelectMany(v => v)))
         {
             _ = NoteStore.ParseNote(JsonSerializer.SerializeToUtf8Bytes(note, NoteStore.JsonOptions), note.Id);
-            if (ImageIds(note.Blocks).Any(id => !payload.Assets.ContainsKey(id))) throw new InvalidDataException("保险箱缺少图片。");
-        }
-    }
-    public static IEnumerable<string> ImageIds(IEnumerable<NoteBlock> blocks)
-    {
-        foreach (var block in blocks)
-        {
-            foreach (var inline in block.Inlines) if (inline.Kind == "image" && inline.AssetId is { } id) yield return id;
-            foreach (var id in ImageIds(block.Children)) yield return id;
+            if (note.GetImageIds().Any(id => !payload.Assets.ContainsKey(id))) throw new InvalidDataException("保险箱缺少图片。");
         }
     }
     public sealed class Box

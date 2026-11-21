@@ -208,7 +208,7 @@ public sealed class GitSyncEngine
             _ = NoteStore.ParseNote(SyncJson.Bytes(note), id);
             if (note.GroupId is { } group && !snapshot.Groups.Any(g => g.Id == group)) throw new InvalidDataException("同步快照缺少便签所属的分组。");
             if (checkAssets)
-                foreach (var asset in ImageIds(note.Blocks))
+                foreach (var asset in note.GetImageIds())
                     if (!snapshot.Assets.TryGetValue(asset, out var bytes) || SyncJson.Hash(bytes) + ".png" != asset) throw new InvalidDataException("同步快照缺少有效图片：" + asset);
         }
     }
@@ -216,7 +216,7 @@ public sealed class GitSyncEngine
     private void FillAssets(SyncSnapshot snapshot)
     {
         var store = new NoteStore(_dataRoot);
-        foreach (var id in snapshot.Notes.Values.SelectMany(n => ImageIds(n.Blocks)).Distinct())
+        foreach (var id in snapshot.Notes.Values.SelectMany(n => n.GetImageIds()).Distinct())
         {
             if (snapshot.Assets.ContainsKey(id)) continue;
             var path = store.GetAssetPath(id);
@@ -236,7 +236,7 @@ public sealed class GitSyncEngine
         };
         foreach (var note in snapshot.Notes.Values) files[Prefix + "notes/" + note.Id + ".json"] = SyncJson.Bytes(note);
         if (snapshot.Ai is not null) files[AiFile] = SyncJson.Bytes(snapshot.Ai);
-        foreach (var id in snapshot.Notes.Values.SelectMany(n => ImageIds(n.Blocks)).Distinct()) files[Prefix + "assets/" + id] = snapshot.Assets[id];
+        foreach (var id in snapshot.Notes.Values.SelectMany(n => n.GetImageIds()).Distinct()) files[Prefix + "assets/" + id] = snapshot.Assets[id];
         if (files.Count > 10000 || files.Values.Any(b => b.Length > MaxFileBytes) || files.Values.Sum(b => (long)b.Length) > MaxTotalBytes)
             throw new InvalidDataException("便签数据超过同步大小限制（单文件 20 MB，总计 256 MB）。");
         return files;
@@ -272,12 +272,4 @@ public sealed class GitSyncEngine
         return output;
     }
 
-    public static IEnumerable<string> ImageIds(IEnumerable<NoteBlock> blocks)
-    {
-        foreach (var block in blocks)
-        {
-            foreach (var inline in block.Inlines) if (inline.Kind == "image" && inline.AssetId is { } id) yield return id;
-            foreach (var id in ImageIds(block.Children)) yield return id;
-        }
-    }
 }
