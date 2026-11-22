@@ -151,6 +151,11 @@ public static class DocumentCodec
         var paragraphStyle = new Style(typeof(Paragraph));
         paragraphStyle.Setters.Add(new Setter(Block.MarginProperty, new Thickness(0, 0, 0, preferences.ParagraphSpacing)));
         document.Resources[typeof(Paragraph)] = paragraphStyle;
+        // WPF creates lists for its editing commands. Give those and loaded lists the same layout.
+        var listStyle = new Style(typeof(WpfList));
+        listStyle.Setters.Add(new Setter(Block.PaddingProperty, new Thickness(24, 0, 0, 0)));
+        listStyle.Setters.Add(new Setter(Block.MarginProperty, new Thickness(0, 4, 0, preferences.ParagraphSpacing)));
+        document.Resources[typeof(WpfList)] = listStyle;
         void ApplyBlocks(BlockCollection blocks)
         {
             foreach (var block in blocks)
@@ -158,7 +163,6 @@ public static class DocumentCodec
                 if (block is Paragraph paragraph) paragraph.ClearValue(Block.MarginProperty);
                 else if (block is WpfList list)
                 {
-                    list.Margin = new Thickness(0, 4, 0, preferences.ParagraphSpacing);
                     foreach (var item in list.ListItems) ApplyBlocks(item.Blocks);
                 }
                 else if (block is Section section) ApplyBlocks(section.Blocks);
@@ -171,8 +175,7 @@ public static class DocumentCodec
     {
         if (block.Kind == "list")
         {
-            var list = new WpfList { Padding = new Thickness(24, 0, 0, 0), Margin = new Thickness(0, 4, 0, 8),
-                MarkerStyle = block.Marker is "Decimal" ? TextMarkerStyle.Decimal : TextMarkerStyle.Disc };
+            var list = new WpfList { MarkerStyle = block.Marker is "Decimal" ? TextMarkerStyle.Decimal : TextMarkerStyle.Disc };
             foreach (var item in block.Children)
             {
                 var li = new ListItem();

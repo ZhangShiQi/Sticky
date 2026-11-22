@@ -241,20 +241,33 @@ internal static partial class Program
 
     private static void ParagraphLayout()
     {
-        foreach (var (caseName, useList, blankLine, fontSize) in new[]
-            { ("plain", false, false, 16.0), ("blank-line", false, true, 16.0), ("list", true, false, 22.0), ("large-font", false, false, 28.0) })
+        foreach (var (caseName, listCommand, blankLine, fontSize) in new (string, RoutedUICommand?, bool, double)[]
+            { ("plain", null, false, 16), ("blank-line", null, true, 16), ("bullets", EditingCommands.ToggleBullets, false, 22),
+              ("numbered", EditingCommands.ToggleNumbering, false, 16), ("large-font", null, false, 28) })
         {
             var workspace = new StickyWorkspace(Path.Combine(_root, "paragraph-layout-" + caseName));
-            workspace.UpdateEditorPreferences(new EditorPreferences { DefaultFontSize = fontSize, ParagraphSpacing = caseName == "list" ? 0 : 12, NewNoteFormat = "richText" });
+            workspace.UpdateEditorPreferences(new EditorPreferences { DefaultFontSize = fontSize, ParagraphSpacing = caseName == "bullets" ? 0 : 12, NewNoteFormat = "richText" });
             var main = new MainWindow(workspace); main.Show(); workspace.CreateNote();
             var note = workspace.Notes.Single(); var window = workspace.Windows[note.Id];
             try
             {
                 var editor = (RichTextBox)window.FindName("Editor");
                 window.Activate(); window.EnterEditMode();
+                if (listCommand is not null)
+                {
+                    editor.AppendText("正文标题");
+                    editor.CaretPosition = editor.Document.ContentEnd.GetInsertionPosition(LogicalDirection.Backward);
+                    EditingCommands.EnterParagraphBreak.Execute(null, editor);
+                }
                 editor.AppendText("第一行内容");
                 editor.CaretPosition = editor.Document.ContentEnd.GetInsertionPosition(LogicalDirection.Backward);
-                if (useList) EditingCommands.ToggleBullets.Execute(null, editor);
+                if (listCommand is not null)
+                {
+                    listCommand.Execute(null, editor);
+                    var marker = listCommand == EditingCommands.ToggleNumbering ? TextMarkerStyle.Decimal : TextMarkerStyle.Disc;
+                    Check(editor.Document.Blocks.OfType<System.Windows.Documents.List>().Single().MarkerStyle == marker,
+                        "The formatting command did not create the requested list.");
+                }
                 EditingCommands.EnterParagraphBreak.Execute(null, editor);
                 editor.CaretPosition.InsertTextInRun("第二行内容");
                 editor.CaretPosition = editor.Document.ContentEnd.GetInsertionPosition(LogicalDirection.Backward);
@@ -263,16 +276,19 @@ internal static partial class Program
                 editor.CaretPosition.InsertTextInRun("第三行内容");
                 Pump(40); window.UpdateLayout();
                 var before = ParagraphPositions(editor);
-                Check(before.Length == (blankLine ? 4 : 3), "Enter did not create the expected paragraphs.");
+                Check(before.Length == (blankLine || listCommand is not null ? 4 : 3), "Enter did not create the expected paragraphs.");
                 Check(window.SaveNow(false), "Could not save layout test note."); window.Close();
                 workspace.OpenNote(note, edit: true);
                 window = workspace.Windows[note.Id]; editor = (RichTextBox)window.FindName("Editor");
                 Pump(40); window.UpdateLayout();
                 var after = ParagraphPositions(editor);
                 Check(after.Length == before.Length, "Reopening changed paragraph count.");
-                for (var i = 1; i < before.Length; i++)
+                for (var i = 0; i < before.Length; i++)
                 {
-                    var oldGap = before[i] - before[i - 1]; var newGap = after[i] - after[i - 1];
+                    Check(Math.Abs(before[i].X - after[i].X) < 0.5,
+                        $"{caseName} indentation changed after reopening: {before[i].X:0.##} -> {after[i].X:0.##} DIP.");
+                    if (i == 0) continue;
+                    var oldGap = before[i].Y - before[i - 1].Y; var newGap = after[i].Y - after[i - 1].Y;
                     Check(Math.Abs(oldGap - newGap) < 0.5, $"{caseName} spacing changed after reopening: {oldGap:0.##} -> {newGap:0.##} DIP.");
                 }
             }
@@ -280,7 +296,7 @@ internal static partial class Program
         }
     }
 
-    private static double[] ParagraphPositions(RichTextBox editor)
+    private static Point[] ParagraphPositions(RichTextBox editor)
     {
         static IEnumerable<Paragraph> Paragraphs(BlockCollection blocks)
         {
@@ -292,7 +308,8 @@ internal static partial class Program
                         foreach (var child in Paragraphs(item.Blocks)) yield return child;
             }
         }
-        return Paragraphs(editor.Document.Blocks).Select(p => p.ContentStart.GetInsertionPosition(LogicalDirection.Forward).GetCharacterRect(LogicalDirection.Forward).Top).ToArray();
+        return Paragraphs(editor.Document.Blocks).Select(p => p.ContentStart.GetInsertionPosition(LogicalDirection.Forward)
+            .GetCharacterRect(LogicalDirection.Forward).TopLeft).ToArray();
     }
     private static void ZipRoundTrip()
     {
