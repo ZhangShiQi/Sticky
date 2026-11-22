@@ -232,6 +232,18 @@ internal static class ScrollTests
         string output = Path.Combine(Environment.CurrentDirectory, "artifacts"); Directory.CreateDirectory(output);
         var log = new StringBuilder("Cut native scrolling test: only synthetic application content is captured/saved.\n");
         Window? page = null; ScrollCaptureWindow? capture = null;
+        static async Task PollFixtureAsync(ScrollCaptureWindow tool, Window fixture)
+        {
+            var handle = new WindowInteropHelper(fixture).Handle;
+            for (var sample = 0; sample < 3; sample++)
+            {
+                // Layout and preview changes can complete the window activation after the
+                // initial handoff. Take each sample with the synthetic fixture in front.
+                if (NativeMethods.GetForegroundWindow() != handle) await FocusFixtureAsync(fixture);
+                await tool.PollAsync();
+                await Task.Delay(50);
+            }
+        }
         try
         {
             var image = Fixture(700, 2600);
@@ -243,12 +255,12 @@ internal static class ScrollTests
             var monitor = NativeMethods.Monitors().First(m => m.Contains(new(area.X, area.Y)));
             var handle = new WindowInteropHelper(page).Handle;
             capture = new(area, monitor) { ResolveTargetForTest = () => handle, AutomaticPolling = false };
-            capture.Show(); await capture.ToggleAsync(); await FocusFixtureAsync(page); await Task.Delay(100);
-            for (int i = 0; i < 3; i++) { await capture.PollAsync(); await Task.Delay(50); }
+            capture.Show(); await capture.ToggleAsync(); await FocusFixtureAsync(page);
+            await PollFixtureAsync(capture, page);
             Check(capture.Document is not null && capture.Running, "Native stable initial frame: " + capture.Message);
             var original = capture.Document!.Last;
             scroller.ScrollToVerticalOffset(120); await Task.Delay(180);
-            for (int i = 0; i < 3; i++) { await capture.PollAsync(); await Task.Delay(50); }
+            await PollFixtureAsync(capture, page);
             Check(capture.Document.Appends == 1 && capture.Document.Height == area.Height + (int)Math.Round(120 * dpi.DpiScaleY), "Native scroll distance: " + capture.Message);
             // Move the controller over the source: capture exclusion must remove its pixels.
             if (OperatingSystem.IsWindowsVersionAtLeast(10, 0, 19041))
@@ -259,15 +271,16 @@ internal static class ScrollTests
                 Same(after, before, "Own toolbar excluded from native capture");
             }
             capture.Pause(); await capture.ToggleAsync(); page.Left += 20; await Task.Delay(100); await capture.PollAsync();
-            Check(!capture.Running && capture.Document.Appends == 1, "Moved source pauses without corrupting result");
+            Check(!capture.Running && capture.Document.Appends == 1 && capture.Message.Contains("位置或尺寸已变化"),
+                "Moved source pauses without corrupting result: " + capture.Message);
             ExportService.SavePng(capture.Document.Build(), Path.Combine(output, "scroll-native-output.png"));
             capture.Close(); page.Left -= 20; scroller.ScrollToVerticalOffset(600); await Task.Delay(150);
             capture = new(area, monitor) { ResolveTargetForTest = () => handle, AutomaticPolling = false, Direction = ScrollDirection.Up };
-            capture.Show(); await capture.ToggleAsync(); await FocusFixtureAsync(page); await Task.Delay(100);
-            for (int i = 0; i < 3; i++) { await capture.PollAsync(); await Task.Delay(50); }
+            capture.Show(); await capture.ToggleAsync(); await FocusFixtureAsync(page);
+            await PollFixtureAsync(capture, page);
             Check(capture.Document is not null, "Native up seed: " + capture.Message);
             scroller.ScrollToVerticalOffset(480); await Task.Delay(150);
-            for (int i = 0; i < 3; i++) { await capture.PollAsync(); await Task.Delay(50); }
+            await PollFixtureAsync(capture, page);
             Check(capture.Document!.Appends == 1 && capture.Document.Height == area.Height + (int)Math.Round(120 * dpi.DpiScaleY), "Native upward scroll: " + capture.Message);
             ExportService.SavePng(capture.Document.Build(), Path.Combine(output, "scroll-native-up-output.png"));
             capture.Close();
@@ -278,8 +291,8 @@ internal static class ScrollTests
             {
                 try
                 {
-                    await modal.ToggleAsync(); await FocusFixtureAsync(modal); await Task.Delay(100);
-                    for (int i = 0; i < 3; i++) { await modal.PollAsync(); await Task.Delay(50); }
+                    await modal.ToggleAsync(); await FocusFixtureAsync(modal);
+                    await PollFixtureAsync(modal, modal);
                     Check(modal.Document is not null, "Modal native initial frame: " + modal.Message); await modal.CompleteAsync();
                 }
                 catch (Exception ex) { modalError = ex; modal.Close(); }
