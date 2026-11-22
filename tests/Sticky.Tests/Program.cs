@@ -77,6 +77,7 @@ internal static partial class Program
         Run("Backup import remaps conflicting group IDs without overwriting groups", GroupBackup);
         Run("Directory trees load legacy records and keep parent paths through ZIP import", DirectoryCatalogAndBackup);
         Run("Directory tree navigation, moves and replay preserve one directory per note", DirectoryWorkspaceAndHistory);
+        Run("Directory menu moves a subtree after an unchanged sync refresh", MoveDirectoryAfterSync);
         Run("Notes without a legacy directory are filed in an ordinary inbox", LegacyDirectoryAssignment);
         Run("Directory trash restores a subtree and keeps individually deleted notes in trash", DirectoryTrashLifecycle);
         Run("Note tags auto-save, filter across directories and overflow in the footer", NoteTagInteraction);

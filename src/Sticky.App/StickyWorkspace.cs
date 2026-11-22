@@ -441,34 +441,42 @@ public sealed partial class StickyWorkspace
 
     public bool RenameDirectory(NoteDirectory directory, string name)
     {
-        if (!Directories.Contains(directory) || !IsActiveDirectory(directory.Id)) return false;
-        var previous = directory.Name;
-        directory.Name = name.Trim();
+        var current = Directories.FirstOrDefault(d => d.Id == directory.Id);
+        if (current is null || !IsActiveDirectory(current.Id)) return false;
+        var previous = current.Name;
+        current.Name = name.Trim();
         try { Store.SaveDirectories(Directories); }
-        catch (Exception ex) { directory.Name = previous; ShowError("无法重命名目录", ex); return false; }
+        catch (Exception ex) { current.Name = previous; ShowError("无法重命名目录", ex); return false; }
         NotifyChanged();
         return true;
     }
 
     public bool MoveDirectory(NoteDirectory directory, Guid? parentId)
     {
-        if (!CanMoveDirectory(directory, parentId)) return false;
-        if (directory.ParentId == parentId) return true;
-        var previous = directory.ParentId;
-        directory.ParentId = parentId;
+        var current = FindMovableDirectory(directory.Id, parentId);
+        if (current is null) return false;
+        if (current.ParentId == parentId) return true;
+        var previous = current.ParentId;
+        current.ParentId = parentId;
         try { Store.SaveDirectories(Directories); }
-        catch (Exception ex) { directory.ParentId = previous; ShowError("无法移动目录", ex); return false; }
+        catch (Exception ex) { current.ParentId = previous; ShowError("无法移动目录", ex); return false; }
         NotifyChanged();
         return true;
     }
 
-    public bool CanMoveDirectory(NoteDirectory directory, Guid? parentId)
+    public bool CanMoveDirectory(NoteDirectory directory, Guid? parentId) => FindMovableDirectory(directory.Id, parentId) is not null;
+
+    private NoteDirectory? FindMovableDirectory(Guid directoryId, Guid? parentId)
     {
-        if (!Directories.Contains(directory) || !IsActiveDirectory(directory.Id)) return false;
-        if (parentId is { } id && !IsActiveDirectory(id)) return false;
-        if (new DirectoryHierarchy(Directories).AncestorsAndSelf(parentId).Any(ancestor => ancestor.Id == directory.Id)) return false;
-        return !Directories.Any(d => d.Id != directory.Id && d.State == DirectoryState.Active && d.ParentId == parentId &&
-            StringComparer.OrdinalIgnoreCase.Equals(d.Name.Trim(), directory.Name.Trim()));
+        var current = Directories.FirstOrDefault(d => d.Id == directoryId);
+        if (current is null) return null;
+        var hierarchy = new DirectoryHierarchy(Directories);
+        if (!hierarchy.IsActive(directoryId)) return null;
+        if (parentId is { } id && (!Directories.Any(d => d.Id == id) || !hierarchy.IsActive(id))) return null;
+        if (hierarchy.AncestorsAndSelf(parentId).Any(ancestor => ancestor.Id == directoryId)) return null;
+        var occupied = Directories.Any(d => d.Id != directoryId && d.State == DirectoryState.Active && d.ParentId == parentId &&
+            StringComparer.OrdinalIgnoreCase.Equals(d.Name.Trim(), current.Name.Trim()));
+        return occupied ? null : current;
     }
 
     public bool MoveNote(Note note, Guid directoryId)

@@ -110,6 +110,51 @@ internal static partial class Program
         finally { workspace.PrepareExit(); }
     }
 
+    private static void MoveDirectoryAfterSync()
+    {
+        var workspace = new StickyWorkspace(Path.Combine(_root, "directory-move-after-sync"));
+        var source = workspace.CreateDirectory("项目")!;
+        var folder = workspace.CreateDirectory("资料", source.Id)!;
+        var child = workspace.CreateDirectory("访谈", folder.Id)!;
+        var archive = workspace.CreateDirectory("归档")!;
+        var destination = workspace.CreateDirectory("往期", archive.Id)!;
+        var note = Example(); note.DirectoryId = child.Id;
+        workspace.Store.Save(note); workspace.Notes.Add(note);
+        var main = new MainWindow(workspace);
+        main.Show();
+        try
+        {
+            var model = (MainViewModel)main.DataContext;
+            model.SelectDirectory(folder.Id);
+            Pump(40); main.UpdateLayout();
+            var snapshot = workspace.CaptureForSync();
+            workspace.ApplySyncedSnapshot(snapshot, snapshot);
+            Check(workspace.Directories.Single(d => d.Id == folder.Id).ParentId == source.Id,
+                "The unchanged sync altered the directory placement before the move.");
+
+            var tree = (TreeView)main.FindName("DirectoryNavigation");
+            var row = ManagerVisuals<Button>(tree).Single(button => button.ContextMenu is not null &&
+                button.DataContext is DirectoryItem item && item.Directory.Id == folder.Id);
+            var menu = row.ContextMenu!;
+            menu.PlacementTarget = row; menu.IsOpen = true; Pump(30);
+            var move = menu.Items.OfType<MenuItem>().Single(item => Equals(item.Header, "移动目录到"));
+            var branch = move.Items.OfType<MenuItem>().Single(item => Equals(item.Header, archive.Name));
+            var target = branch.Items.OfType<MenuItem>().Single(item => Equals(item.Header, destination.Name));
+            menu.IsOpen = false;
+            target.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+
+            Check(workspace.DirectoryPath(child.Id) == "归档 › 往期 › 资料 › 访谈" && model.SelectedDirectoryId == folder.Id &&
+                workspace.Notes.Single().Id == note.Id && workspace.Notes.Single().DirectoryId == child.Id,
+                "The directory menu did not move the original subtree after sync.");
+            var reloaded = new DirectoryHierarchy(workspace.Store.LoadDirectories());
+            Check(reloaded.PathLabel(child.Id) == "归档 › 往期 › 资料 › 访谈", "The moved subtree was not persisted.");
+            Check(workspace.RenameDirectory(folder, "项目资料"), "An existing menu reference could not rename the directory after sync.");
+            reloaded = new DirectoryHierarchy(workspace.Store.LoadDirectories());
+            Check(reloaded.PathLabel(child.Id) == "归档 › 往期 › 项目资料 › 访谈", "The directory rename after sync was not persisted.");
+        }
+        finally { workspace.PrepareExit(); }
+    }
+
     private static void LegacyDirectoryAssignment()
     {
         var source = Store("legacy-unassigned-directory");
