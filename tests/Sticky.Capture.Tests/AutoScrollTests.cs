@@ -187,17 +187,26 @@ internal static class AutoScrollTests
             var area = new PixelRect((int)origin.X, (int)origin.Y, (int)(scroller.ActualWidth * dpi.DpiScaleX), (int)(scroller.ActualHeight * dpi.DpiScaleY));
             var monitor = NativeMethods.Monitors().First(m => m.Contains(new(area.X, area.Y)));
             var hwnd = new WindowInteropHelper(page).Handle;
+            var fixturePointer = new PixelPoint(area.X + area.Width / 2, area.Y + area.Height / 2);
+            void PlaceFixturePointer() => Check(SetCursorPos(fixturePointer.X, fixturePointer.Y), "Move pointer into synthetic viewport");
+            async Task PollFixtureAsync(ScrollCaptureWindow window)
+            {
+                await Task.Delay(120);
+                // Positive samples assume a stationary pointer. The exit case below moves it outside explicitly.
+                if (!area.Contains(NativeMethods.CursorPosition())) PlaceFixturePointer();
+                await window.PollAsync();
+            }
             foreach (var direction in Enum.GetValues<ScrollDirection>())
             foreach (var speed in Enum.GetValues<ScrollSpeed>())
             {
                 imageControl.Source = image; scroller.ScrollToVerticalOffset(direction == ScrollDirection.Down ? 0 : 385); await Task.Delay(160);
                 capture = new(area, monitor) { ResolveTargetForTest = () => hwnd, AutoScroll = true, Speed = speed, Direction = direction, AutomaticPolling = false, CountdownMilliseconds = 150 };
                 capture.Show(); await capture.ToggleAsync(); await ScrollTests.FocusFixtureAsync(page);
-                SetCursorPos(area.X + 320, area.Y + 220);
+                PlaceFixturePointer();
                 long deadline = Environment.TickCount64 + 35000;
-                while (capture.Running && Environment.TickCount64 < deadline) { await Task.Delay(120); await capture.PollAsync(); }
+                while (capture.Running && Environment.TickCount64 < deadline) await PollFixtureAsync(capture);
                 Check(!capture.Running && capture.Document is not null, "Auto end " + direction + "/" + speed + ": " + capture.Message);
-                Check(capture.Message.Contains("已到") || capture.Message.Contains("未检测到新内容"), "End status " + capture.Message);
+                Check(capture.Message.Contains("已到") || capture.Message.Contains("未检测到新内容"), $"End status {direction}/{speed}: {capture.Message}");
                 Check(Math.Abs(scroller.VerticalOffset - (direction == ScrollDirection.Down ? 385 : 0)) < .01, "Real wheel reaches extent");
                 Check(capture.Document!.Height == (int)Math.Round(885 * dpi.DpiScaleY), "All final rows captured: " + capture.Document.Height + ", " + capture.Message);
                 if (dpi.DpiScaleY == 1 && dpi.DpiScaleX == 1) ScrollTests.Same(capture.Document.Build(), nativeReference, "Native full pixel output");
@@ -207,9 +216,9 @@ internal static class AutoScrollTests
                 if (direction == ScrollDirection.Down && speed == ScrollSpeed.Standard)
                 {
                     imageControl.Source = ScrollTests.Fixture(700, 981); await Task.Delay(120);
-                    await capture.ToggleAsync(); await ScrollTests.FocusFixtureAsync(page); SetCursorPos(area.X + 320, area.Y + 220);
+                    await capture.ToggleAsync(); await ScrollTests.FocusFixtureAsync(page); PlaceFixturePointer();
                     deadline = Environment.TickCount64 + 18000;
-                    while (capture.Running && Environment.TickCount64 < deadline) { await Task.Delay(120); await capture.PollAsync(); }
+                    while (capture.Running && Environment.TickCount64 < deadline) await PollFixtureAsync(capture);
                     Check(capture.Document.Height == (int)Math.Round(981 * dpi.DpiScaleY), "Native continue after newly appended content");
                     ScrollTests.Preview(capture, Path.Combine(output, "auto-scroll-native-preview.png"));
                     ExportService.SavePng(capture.Document.Build(), Path.Combine(output, "auto-scroll-native-output.png"));
@@ -224,11 +233,11 @@ internal static class AutoScrollTests
             capture.Show();
             async Task Arm()
             {
-                await capture.ToggleAsync(); await ScrollTests.FocusFixtureAsync(page); SetCursorPos(area.X + 320, area.Y + 220);
-                for (int i = 0; i < 3; i++) { await Task.Delay(120); await capture.PollAsync(); }
+                await capture.ToggleAsync(); await ScrollTests.FocusFixtureAsync(page); PlaceFixturePointer();
+                for (int i = 0; i < 3; i++) await PollFixtureAsync(capture);
                 Check(capture.Running, "Rearmed: " + capture.Message);
             }
-            await capture.ToggleAsync(); await ScrollTests.FocusFixtureAsync(page); SetCursorPos(area.X + 320, area.Y + 220);
+            await capture.ToggleAsync(); await ScrollTests.FocusFixtureAsync(page); PlaceFixturePointer();
             keybd_event(0x11, 0, 0, UIntPtr.Zero);
             try { await Task.Delay(80); await capture.PollAsync(); Check(!capture.Running && capture.InputsSent == 0, "Held Ctrl during countdown cannot cause wheel zoom"); }
             finally { keybd_event(0x11, 0, 2, UIntPtr.Zero); }
@@ -237,7 +246,7 @@ internal static class AutoScrollTests
             keybd_event(0x1B, 0, 0, UIntPtr.Zero); keybd_event(0x1B, 0, 2, UIntPtr.Zero); await Task.Delay(160);
             Check(!capture.Running && capture.IsVisible, "Global Esc stops without closing preview");
             int before = capture.InputsSent; await capture.PollAsync(); Check(before == capture.InputsSent, "Esc prevents late wheel");
-            await Arm(); SetCursorPos(area.Right + 50, area.Bottom + 50); await capture.PollAsync();
+            await Arm(); Check(SetCursorPos(area.Right + 50, area.Bottom + 50), "Move pointer outside synthetic viewport"); await capture.PollAsync();
             Check(!capture.Running && capture.Message.Contains("鼠标"), "Leaving viewport pauses");
             await Arm();
             mouse_event(0x0800, 0, 0, unchecked((uint)-120), UIntPtr.Zero); await Task.Delay(180);
