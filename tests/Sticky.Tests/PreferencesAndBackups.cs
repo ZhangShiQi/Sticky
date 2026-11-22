@@ -85,7 +85,7 @@ internal static partial class Program
     private static void DedicatedBackups()
     {
         var store = Store("legacy-backups"); var note = Example(); store.Save(note);
-        store.SaveGroups([new NoteGroup { Name = "旧分组" }]); store.SaveDeviceState(new DeviceState());
+        store.SaveDirectories([new NoteDirectory { Name = "旧目录" }]); store.SaveDeviceState(new DeviceState());
         store.SaveEditorPreferences(new EditorPreferences { DefaultFontSize = 20 });
         var baseline = Path.Combine(store.Root, "device", "sync", "test-target", "baseline.json");
         SyncJson.WriteAtomic(baseline, SyncJson.Bytes(new SyncSnapshot()), store.Root);
@@ -99,7 +99,7 @@ internal static partial class Program
         Check(originals.All(p => !File.Exists(p + ".bak") && File.Exists(WorkspaceFiles.BackupPath(store.Root, p))), "Legacy backups were not moved into mirrored dedicated folders.");
         Check(Directory.EnumerateFiles(Path.Combine(store.BackupsDirectory, "legacy"), "*.bak", SearchOption.AllDirectories).Any(p => File.ReadAllText(p) == "existing older backup"), "Migration discarded an existing backup on collision.");
         File.WriteAllText(notePath, "{broken"); File.WriteAllText(originals[1], "{broken");
-        Check(store.LoadNotes().Single().Title == note.Title && store.LoadGroups().Single().Name == "旧分组", "Migrated backups no longer recover notes/groups.");
+        Check(store.LoadNotes().Single().Title == note.Title && store.LoadDirectories().Single().Name == "旧目录", "Migrated backups no longer recover notes/groups.");
         note.Title = "新版本"; store.Save(note); SyncJson.WriteAtomic(baseline, SyncJson.Bytes(new SyncSnapshot()), store.Root);
         Check(Directory.EnumerateFiles(store.Root, "*.bak", SearchOption.AllDirectories).All(p => Path.GetRelativePath(store.Root, p).StartsWith("backups" + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)), "A new .bak leaked beside normal data files.");
         try { WorkspaceFiles.BackupPath(store.Root, Path.Combine(_root, "outside.json")); throw new Exception("Backup path escaped the workspace."); } catch (ArgumentException) { }
@@ -108,10 +108,10 @@ internal static partial class Program
     private static void BackupOnlyRecovery()
     {
         var store = Store("backup-only"); var note = Example(); store.Save(note);
-        store.SaveGroups([new NoteGroup { Name = "恢复分组" }]);
+        store.SaveDirectories([new NoteDirectory { Name = "恢复目录" }]);
         File.Delete(Path.Combine(store.NotesDirectory, note.Id + ".json")); File.Delete(Path.Combine(store.Root, "groups.json"));
         var reopened = new NoteStore(store.Root);
-        Check(reopened.LoadNotes().Single().Id == note.Id && reopened.LoadGroups().Single().Name == "恢复分组", "Backup-only files were not discovered/restored.");
+        Check(reopened.LoadNotes().Single().Id == note.Id && reopened.LoadDirectories().Single().Name == "恢复目录", "Backup-only files were not discovered/restored.");
         Check(File.Exists(Path.Combine(store.NotesDirectory, note.Id + ".json")) && File.Exists(Path.Combine(store.Root, "groups.json")), "Recovery did not recreate primary data.");
     }
 }

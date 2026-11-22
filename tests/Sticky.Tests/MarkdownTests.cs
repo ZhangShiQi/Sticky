@@ -24,8 +24,8 @@ internal static partial class Program
         var legacy = Example();
         store.Save(legacy);
         var legacyPath = Path.Combine(store.NotesDirectory, legacy.Id + ".json");
-        var legacyBytes = File.ReadAllBytes(legacyPath);
         var workspace = new StickyWorkspace(store.Root);
+        var legacyBytes = File.ReadAllBytes(legacyPath);
         try
         {
             workspace.CreateNote();
@@ -159,10 +159,12 @@ internal static partial class Program
     private static void MarkdownConversionHistory()
     {
         var store = Store("markdown-conversion");
-        var group = new NoteGroup { Name = "转换组" };
-        store.SaveGroups([group]);
+        var group = new NoteDirectory { Name = "转换组" };
+        store.SaveDirectories([group]);
+        var tag = new NoteTag(Guid.NewGuid(), "转换测试");
+        store.SaveTags([tag]);
         var id = MarkdownTestImage(store);
-        var original = new Note { Title = "固定标题", GroupId = group.Id, Color = "rose", Blocks =
+        var original = new Note { Title = "固定标题", DirectoryId = group.Id, Color = "rose", Blocks =
         [
             new NoteBlock { Alignment = "Center", Inlines =
             [
@@ -184,6 +186,7 @@ internal static partial class Program
                 ] }
             ] }
         ] };
+        original.SetTags([tag.Id]);
         store.Save(original);
         var workspace = new StickyWorkspace(store.Root);
         try
@@ -228,7 +231,8 @@ internal static partial class Program
             Check(note.IsMarkdown && note.GetImageIds().Single() == id && note.GetBodyBlocks()[0].Inlines.Any(i => i.Bold && i.Text == "加粗")
                 && note.GetBodyBlocks()[0].Inlines.Any(i => i.Strike && i.Text == "删除线") && note.PlainText == original.PlainText,
                 "Rich text conversion lost a supported style, list text, or attachment.");
-            Check(note.Id == original.Id && note.Title == original.Title && note.GroupId == original.GroupId && note.Color == original.Color,
+            Check(note.Id == original.Id && note.Title == original.Title && note.DirectoryId == original.DirectoryId && note.Color == original.Color
+                && note.Tags.Single() == tag.Id && note.SchemaVersion == Note.TaggedMarkdownVersion,
                 "Conversion changed the note's identity or properties.");
 
             window.EnterEditMode();
@@ -252,11 +256,11 @@ internal static partial class Program
                 $"The history comparison did not expose the original format or its restore action ({beforeLabel}, sequence {history.PreviewSequence}).");
             history.Close();
             var markdownFrame = timeline.Frame(markdownVersion);
-            workspace.RestoreHistoryNote(markdownFrame.Notes[note.Id], markdownFrame.Groups, markdownVersion, asCopy: false);
+            workspace.RestoreHistoryNote(markdownFrame.Notes[note.Id], markdownFrame.Directories, markdownVersion, asCopy: false);
             Check(note.IsMarkdown && note.MarkdownSource == markdownSource, "Restoring history did not recover exact Markdown source.");
             var originalFrame = timeline.Frame(before);
-            workspace.RestoreHistoryNote(originalFrame.Notes[note.Id], originalFrame.Groups, before, asCopy: false);
-            Check(!note.IsMarkdown && SyncJson.Equal(original.Blocks, note.Blocks) && store.LoadNotes().Single().SchemaVersion == Note.RichTextVersion,
+            workspace.RestoreHistoryNote(originalFrame.Notes[note.Id], originalFrame.Directories, before, asCopy: false);
+            Check(!note.IsMarkdown && SyncJson.Equal(original.Blocks, note.Blocks) && store.LoadNotes().Single().SchemaVersion == Note.TaggedRichTextVersion && note.Tags.Single() == tag.Id,
                 "Restoring the original history did not recover its original rich formatting and attachments.");
         }
         finally { workspace.PrepareExit(); }

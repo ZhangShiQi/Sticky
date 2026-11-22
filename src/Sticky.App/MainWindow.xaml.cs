@@ -2,8 +2,8 @@ using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using Sticky.Core;
 using Sticky.App.ViewModels;
-using GroupItem = Sticky.App.ViewModels.GroupItem;
 
 namespace Sticky.App;
 
@@ -40,7 +40,7 @@ public partial class MainWindow : Window
     private void CreateSelectedNote()
     {
         if (_viewModel.IsVaultSelected) _workspace.CreateVaultNote();
-        else _workspace.CreateNote(_viewModel.SelectedGroupId);
+        else _workspace.CreateNote(_viewModel.SelectedDirectoryId);
     }
     public void SelectVault() => _viewModel.SelectVault();
     private async void UnlockVault(object sender, RoutedEventArgs e) => await _workspace.EnsureVaultController().EnsureUnlockedAsync();
@@ -50,8 +50,6 @@ public partial class MainWindow : Window
     {
         var dialog = _workspace.EnsureVaultController(); dialog.Owner = this; dialog.Show(); dialog.Activate();
     }
-    private void ShowNotes(object sender, RoutedEventArgs e) => _viewModel.SelectGroup(null);
-    private void ShowUngrouped(object sender, RoutedEventArgs e) => _viewModel.SelectGroup(null, ungroupedOnly: true);
     private void ShowTrash(object sender, RoutedEventArgs e) => _viewModel.ShowDeleted = true;
     private void OpenSettings(object sender, RoutedEventArgs e) => _workspace.ShowSettings();
     private async void StartCapture(object sender, RoutedEventArgs e) => await _workspace.Capture.StartCaptureAsync(this);
@@ -67,29 +65,54 @@ public partial class MainWindow : Window
         if (e.Key != Key.Enter) return;
         e.Handled = true;
         var query = SidebarSearchBox.Text.Trim();
-        if (query.Length > 0) _workspace.ShowSearch(query);
+        _workspace.ShowSearch(query);
     }
-    private void SelectGroup(object sender, RoutedEventArgs e)
+    private void SelectDirectory(object sender, RoutedEventArgs e)
     {
-        if ((sender as FrameworkElement)?.DataContext is GroupItem item) _viewModel.SelectGroup(item.Group.Id);
+        if ((sender as FrameworkElement)?.DataContext is DirectoryItem item) _viewModel.SelectDirectory(item.Directory.Id);
     }
-    private void NewGroup(object sender, RoutedEventArgs e)
+    private void NewDirectory(object sender, RoutedEventArgs e) => CreateDirectory(null);
+    private void CreateDirectory(Guid? parentId)
     {
-        var name = TextPrompt.Show(this, "新建分组", "分组名称");
-        if (name is not null && _workspace.CreateGroup(name) is { } group) _viewModel.SelectGroup(group.Id);
+        var name = TextPrompt.Show(this, parentId is null ? "新建目录" : "新建子目录", "目录名称");
+        if (name is not null && _workspace.CreateDirectory(name, parentId) is { } directory) _viewModel.SelectDirectory(directory.Id);
     }
-    private void RenameGroup(object sender, RoutedEventArgs e)
+    private void DirectoryMenuOpened(object sender, RoutedEventArgs e)
     {
-        if ((sender as FrameworkElement)?.DataContext is GroupItem item) Rename(item.Group);
+        if (sender is not ContextMenu menu || menu.PlacementTarget is not FrameworkElement { DataContext: DirectoryItem item }) return;
+        var directory = item.Directory;
+        menu.Items.Clear();
+        var create = new MenuItem { Header = "新建子目录…" };
+        create.Click += (_, _) => CreateDirectory(directory.Id);
+        var rename = new MenuItem { Header = "重命名目录…" };
+        rename.Click += (_, _) => Rename(directory);
+        var move = new MenuItem { Header = "移动目录到" };
+        var occupied = _workspace.Directories.Where(d => d.Id != directory.Id && d.State == DirectoryState.Active &&
+            StringComparer.OrdinalIgnoreCase.Equals(d.Name.Trim(), directory.Name.Trim())).Select(d => d.ParentId).ToHashSet();
+        NoteMenus.FillDirectoryTargets(move.Items, _workspace.Directories, id =>
+        {
+            if (_workspace.MoveDirectory(directory, id)) _viewModel.SelectDirectory(directory.Id);
+        }, directory.ParentId, excluded: directory.Id, canSelect: id => !occupied.Contains(id), includeTopLevel: true);
+        menu.Items.Add(create);
+        menu.Items.Add(rename);
+        menu.Items.Add(move);
+        menu.Items.Add(new Separator());
+        var delete = new MenuItem { Header = "删除目录" };
+        delete.Click += (_, _) => _workspace.DeleteDirectory(directory.Id);
+        menu.Items.Add(delete);
     }
-    private void RenameSelectedGroup(object sender, RoutedEventArgs e)
+    private void RestoreDirectory(object sender, RoutedEventArgs e)
     {
-        if (_workspace.Groups.FirstOrDefault(g => g.Id == _viewModel.SelectedGroupId) is { } group) Rename(group);
+        if (sender is FrameworkElement { DataContext: TrashedDirectoryItem item }) _workspace.RestoreDirectory(item.Id);
     }
-    private void Rename(Core.NoteGroup group)
+    private void RenameSelectedDirectory(object sender, RoutedEventArgs e)
     {
-        var name = TextPrompt.Show(this, "重命名分组", "分组名称", group.Name);
-        if (name is not null) _workspace.RenameGroup(group, name);
+        if (_workspace.Directories.FirstOrDefault(d => d.Id == _viewModel.SelectedDirectoryId) is { } directory) Rename(directory);
+    }
+    private void Rename(NoteDirectory directory)
+    {
+        var name = TextPrompt.Show(this, "重命名目录", "目录名称", directory.Name);
+        if (name is not null) _workspace.RenameDirectory(directory, name);
     }
     private void MoveCard(object sender, RoutedEventArgs e)
     {
@@ -101,14 +124,23 @@ public partial class MainWindow : Window
     {
         if (sender is not Button { DataContext: NoteCard card } button) return;
         var menu = new ContextMenu { PlacementTarget = button };
-        var vault = new MenuItem { Header = _workspace.IsVaultNote(card.Note.Id) ? "移出保险箱…" : "移入保险箱…" };
-        vault.Click += (_, _) => { if (_workspace.IsVaultNote(card.Note.Id)) _workspace.EnsureVaultController().MoveOut(card.Note.Id); else _workspace.MoveIntoVault(card.Note); }; menu.Items.Add(vault);
+        var isPrivate = _workspace.IsVaultNote(card.Note.Id);
+        var vault = new MenuItem { Header = isPrivate ? "移出保险箱…" : "移入保险箱…" };
+        vault.Click += (_, _) => { if (isPrivate) _workspace.EnsureVaultController().MoveOut(card.Note.Id); else _workspace.MoveIntoVault(card.Note); };
+        menu.Items.Add(vault);
         button.ContextMenu = menu;
         var history = new MenuItem { Header = "历史版本与重放…" };
         history.Click += (_, _) => _workspace.ShowHistory(card.Note.Id);
         menu.Items.Add(history);
         if (card.Note.DeletedAt is null)
         {
+            if (!isPrivate)
+            {
+                var move = new MenuItem { Header = "移动到目录" };
+                NoteMenus.FillNoteDirectoryTargets(move.Items, _workspace, card.Note);
+                menu.Items.Add(move);
+                AddEditTags(menu, card.Note);
+            }
             var delete = new MenuItem { Header = "移入回收站" };
             delete.Click += (_, _) => _workspace.Delete(card.Note);
             menu.Items.Add(delete);
@@ -127,10 +159,29 @@ public partial class MainWindow : Window
         open.Click += (_, _) => { if (card.Note.DeletedAt is null) _workspace.OpenNote(card.Note); else _workspace.Restore(card.Note); }; menu.Items.Add(open);
         if (card.Note.DeletedAt is null)
         {
-            var move = new MenuItem { Header = "移动到分组" }; NoteMenus.FillMoveItems(move.Items, _workspace, card.Note); menu.Items.Add(move);
+            AddMoveMenu(menu, card);
+            AddEditTags(menu, card.Note);
             var delete = new MenuItem { Header = "移入回收站" }; delete.Click += (_, _) => _workspace.Delete(card.Note); menu.Items.Add(delete);
         }
         var history = new MenuItem { Header = "历史版本与重放…" }; history.Click += (_, _) => _workspace.ShowHistory(card.Note.Id); menu.Items.Add(history);
+    }
+    private void AddMoveMenu(ContextMenu menu, NoteCard card)
+    {
+        if (_workspace.IsVaultNote(card.Note.Id))
+        {
+            NoteMenus.FillMoveItems(menu.Items, _workspace, card.Note);
+            return;
+        }
+        var move = new MenuItem { Header = "移动到目录" };
+        NoteMenus.FillMoveItems(move.Items, _workspace, card.Note);
+        menu.Items.Add(move);
+    }
+    private void AddEditTags(ContextMenu menu, Note note)
+    {
+        if (!_workspace.CanEditTags(note)) return;
+        var tags = new MenuItem { Header = "编辑标签…" };
+        tags.Click += (_, _) => new TagEditorWindow(_workspace, note) { Owner = this }.ShowDialog();
+        menu.Items.Add(tags);
     }
     private void OpenCard(object sender, RoutedEventArgs e)
     {

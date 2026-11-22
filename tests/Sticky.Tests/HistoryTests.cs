@@ -27,10 +27,10 @@ internal static partial class Program
         var note = Example(); var asset = DocumentCodec.StoreBitmap(SampleBitmap(), store);
         note.Blocks.Add(new NoteBlock { Inlines = [new NoteInline { Kind = "image", AssetId = asset }] });
         store.Save(note);
-        var group = new NoteGroup { Name = "旅行" }; store.SaveGroups([group]);
-        note.GroupId = group.Id; store.Save(note);
+        var group = new NoteDirectory { Name = "旅行" }; store.SaveDirectories([group]);
+        note.DirectoryId = group.Id; store.Save(note);
         var layout = new DeviceState(); layout.Windows[note.Id] = new Sticky.Core.WindowState { Left = -400, Top = 200, IsOpen = true }; store.SaveDeviceState(layout);
-        group.Name = "旅行计划"; store.SaveGroups([group]);
+        group.Name = "旅行计划"; store.SaveDirectories([group]);
         note.Color = "rose"; note.Title = "旅行清单"; note.Blocks[0].Inlines[0].Text += " · 更新"; store.Save(note);
         var edited = store.History.ReadTimeline().Events.Last().Sequence;
         note.DeletedAt = DateTimeOffset.UtcNow; store.Save(note);
@@ -40,7 +40,7 @@ internal static partial class Program
             && timeline.Events.Any(e => e.Kind == "noteDeleted") && timeline.Events.Any(e => e.Kind == "noteRestored"), "Lifecycle events were not retained.");
         var frame = timeline.Frame(edited);
         Check(frame.Notes[note.Id].Blocks[0].Inlines[0].Bold && frame.Notes[note.Id].Blocks[2].Inlines[0].AssetId == asset, "History lost rich text or image references.");
-        Check(frame.Notes[note.Id].GroupId == group.Id && frame.Groups.Single().Name == "旅行计划" && frame.Layout.Windows[note.Id].Left == -400, "History lost group or position state.");
+        Check(frame.Notes[note.Id].DirectoryId == group.Id && frame.Directories.Single().Name == "旅行计划" && frame.Layout.Windows[note.Id].Left == -400, "History lost group or position state.");
         Check(timeline.Rows(note.Id).Any(r => r.Last.Kind == "groupsChanged" && r.Last.Changes.Any(c => c.Contains("重命名"))), "Group rename is missing from per-note history.");
         frame.Notes[note.Id].Title = "mutated preview";
         Check(store.LoadNotes().Single().Title == "旅行清单" && timeline.Frame(edited).Notes[note.Id].Title == "旅行清单", "A preview mutated persisted state.");
@@ -158,7 +158,7 @@ internal static partial class Program
             var editor = (RichTextBox)window.FindName("Editor"); editor.AppendText("周末出行计划\n带相机和一瓶水"); Check(window.SaveNow(false), "Initial history edit did not save.");
             var oldSequence = workspace.Store.History.ReadTimeline().Events.Last(e => e.Target.StartsWith("notes/", StringComparison.Ordinal)).Sequence;
             var oldFrame = workspace.Store.History.ReadTimeline().Frame(oldSequence);
-            var group = workspace.CreateGroup("生活")!; workspace.MoveNote(note, group.Id);
+            var group = workspace.CreateDirectory("生活")!; workspace.MoveNote(note, group.Id);
             editor.AppendText("\n新增：带上雨伞"); Check(window.SaveNow(false), "Later edit did not save.");
             workspace.ShowHistory(note.Id); Pump(60);
             var history = workspace.History!;
@@ -177,9 +177,9 @@ internal static partial class Program
             var bitmap = new RenderTargetBitmap((int)history.ActualWidth, (int)history.ActualHeight, 96, 96, PixelFormats.Pbgra32); bitmap.Render(history);
             using (var output = File.Create(Path.Combine(_root, "history-ui.png"))) { var png = new PngBitmapEncoder(); png.Frames.Add(BitmapFrame.Create(bitmap)); png.Save(output); }
             var originalText = note.PlainText;
-            var copy = workspace.RestoreHistoryNote(oldFrame.Notes[note.Id], oldFrame.Groups, oldSequence, asCopy: true);
+            var copy = workspace.RestoreHistoryNote(oldFrame.Notes[note.Id], oldFrame.Directories, oldSequence, asCopy: true);
             Check(copy.Id != note.Id && note.PlainText == originalText && !copy.PlainText.Contains("雨伞"), "Restore-as-copy changed the original or restored wrong content.");
-            workspace.RestoreHistoryNote(oldFrame.Notes[note.Id], oldFrame.Groups, oldSequence, asCopy: false);
+            workspace.RestoreHistoryNote(oldFrame.Notes[note.Id], oldFrame.Directories, oldSequence, asCopy: false);
             Check(!note.PlainText.Contains("雨伞") && note.PlainText.Contains("相机") && workspace.Store.History.ReadTimeline().Events.Any(e => e.Kind == "historyRestored"), "Restore did not append a new historical action.");
         }
         finally { workspace.PrepareExit(); }
@@ -219,11 +219,13 @@ internal static partial class Program
             var entry = workspace.Store.History.ReadTimeline().Events.Last(e => e.Target.StartsWith("notes/", StringComparison.Ordinal));
             Check(entry.Source == "sync" && entry.Summary.Contains("来自另一台电脑"), "Incoming sync did not enter the local timeline.");
             var before = HistoryNoteBytes(workspace.Store.Root);
-            var missing = Example(); missing.GroupId = Guid.NewGuid(); missing.Blocks.Add(new NoteBlock { Inlines = [new NoteInline { Kind = "image", AssetId = new string('a', 64) + ".png" }] });
+            var directoryIds = workspace.Directories.Select(d => d.Id).ToArray();
+            var missing = Example(); missing.DirectoryId = Guid.NewGuid(); missing.Blocks.Add(new NoteBlock { Inlines = [new NoteInline { Kind = "image", AssetId = new string('a', 64) + ".png" }] });
             var failed = false;
-            try { workspace.RestoreHistoryNote(missing, [new NoteGroup { Id = missing.GroupId.Value, Name = "不能意外创建" }], 1, asCopy: true); }
+            try { workspace.RestoreHistoryNote(missing, [new NoteDirectory { Id = missing.DirectoryId.Value, Name = "不能意外创建" }], 1, asCopy: true); }
             catch (IOException) { failed = true; }
-            Check(failed && HistoryNoteBytes(workspace.Store.Root).SequenceEqual(before) && workspace.Groups.Count == 0, "Invalid restore partially changed notes or created a group.");
+            Check(failed && HistoryNoteBytes(workspace.Store.Root).SequenceEqual(before) && workspace.Directories.Select(d => d.Id).SequenceEqual(directoryIds),
+                "Invalid restore partially changed notes or directories.");
         }
         finally { workspace.PrepareExit(); }
     }
@@ -262,7 +264,9 @@ internal static partial class Program
         var root = Path.Combine(_root, "history-multi-ui");
         var time = DateTimeOffset.Parse("2026-10-23T09:20:00+08:00");
         var store = new NoteStore(root, new HistoryOptions { Clock = () => time });
-        Note Create(string title, string color, params string[] lines) => new() { Title = title, Color = color, Blocks = lines.Select(t => new NoteBlock { Inlines = [new NoteInline { Text = t }] }).ToList() };
+        var directory = new NoteDirectory { Name = "历史回放" };
+        store.SaveDirectories([directory]);
+        Note Create(string title, string color, params string[] lines) => new() { Title = title, Color = color, DirectoryId = directory.Id, Blocks = lines.Select(t => new NoteBlock { Inlines = [new NoteInline { Text = t }] }).ToList() };
         var trip = Create("周末出行", "amber", "周末想去海边。", "留一个下午，慢慢走。"); store.Save(trip);
         time = time.AddHours(6); var shop = Create("采购清单", "sage", "咖啡豆", "牛奶", "面包"); store.Save(shop);
         time = time.AddHours(18); trip.Blocks.Add(new NoteBlock { Inlines = [new NoteInline { Text = "带上相机，日落前到达。", Bold = true }] }); store.Save(trip);

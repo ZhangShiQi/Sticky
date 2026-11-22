@@ -69,7 +69,7 @@ internal static partial class Program
             {
                 outside.Show(); outside.Activate(); Pump(40);
                 Check(!viewer.IsVisible && !Application.Current.Windows.OfType<ImageViewerWindow>().Any() && outside.IsActive,
-                    "Switching to another window did not dismiss the viewer or stole focus back to the note.");
+                    $"Switching to another window did not dismiss the viewer or stole focus back to the note. Viewer visible: {viewer.IsVisible}, outside active: {outside.IsActive}, note active: {window.IsActive}.");
             }
             finally { outside.Close(); }
             ClickImage(2); viewer = Application.Current.Windows.OfType<ImageViewerWindow>().Single();

@@ -105,7 +105,7 @@ public sealed class HistoryTimelineView : Grid
             foreach (var i in bucket)
             {
                 var tick = new TextBlock { Text = _rows[i].Last.Time.ToLocalTime().ToString("HH:mm:ss"), FontSize = 11, Width = 80, TextAlignment = TextAlignment.Center,
-                    ToolTip = _rows[i].Last.Time.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") + " · " + _rows[i].Last.Summary };
+                    ToolTip = _rows[i].Last.Time.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") + " · " + _rows[i].Summary };
                 AutomationProperties.SetAutomationId(tick, "HistoryTimeTick-" + _rows[i].Sequence);
                 Put(tick, _positions[i] - 40, 22); _ticks.Add((tick, i));
                 AddNode(i, null, 51);
@@ -128,13 +128,13 @@ public sealed class HistoryTimelineView : Grid
     {
         var row = _rows[index]; var workspace = track is null;
         var title = row.Last.NoteTitle;
-        if (string.IsNullOrWhiteSpace(title)) title = row.Last.Kind == "baseline" ? "开始记录" : row.Last.Summary;
+        if (string.IsNullOrWhiteSpace(title)) title = row.Last.Kind == "baseline" ? "开始记录" : row.Summary;
         var content = new StackPanel();
         content.Children.Add(HistoryActionIcons.Create(row.Last.Kind));
         if (workspace) content.Children.Add(new TextBlock { Text = title, TextTrimming = TextTrimming.CharacterEllipsis, Width = 76, TextAlignment = TextAlignment.Center, Margin = new Thickness(0, 5, 0, 0) });
         var node = new Button { Content = content, Width = workspace ? 84 : 36, Height = workspace ? 54 : 36,
             Padding = new Thickness(2), Margin = new Thickness(0), FontSize = 12,
-            ToolTip = ActionLabel(row.Last.Kind) + " · " + (workspace ? title : track!.Title) + "\n" + row.Description + "\n" + string.Join("\n", row.Last.Changes) };
+            ToolTip = ActionLabel(row.Last.Kind) + " · " + (workspace ? title : track!.Title) + "\n" + row.Description + "\n" + string.Join("\n", HistoryDescriptions.DisplayChanges(row.Last)) };
         node.Click += (_, _) => FrameRequested?.Invoke(index);
         AutomationProperties.SetName(node, (workspace ? "工作空间 " + title : track!.Title) + " " + row.Description + " " + ActionLabel(row.Last.Kind));
         AutomationProperties.SetAutomationId(node, workspace ? "HistoryWorkspaceNode-" + row.Sequence : "HistoryNoteNode-" + track!.Id + "-" + row.Sequence);
@@ -142,5 +142,5 @@ public sealed class HistoryTimelineView : Grid
         _nodes.Add((node, index, Brush(workspace ? "#E3EADC" : track!.Color), workspace));
     }
     public static string ActionLabel(string kind) => kind switch
-    { "baseline" => "初始状态", "noteCreated" => "新建", "noteDeleted" or "noteRemoved" or "externalRemoved" => "删除", "noteRestored" => "恢复", "noteMoved" => "移动分组", "historyRestored" => "恢复历史", "groupsChanged" => "分组变更", _ => "修改" };
+    { "baseline" => "初始状态", "noteCreated" => "新建", "noteDeleted" or "noteRemoved" or "externalRemoved" => "删除", "noteRestored" => "恢复", "noteMoved" => "移动目录", "historyRestored" => "恢复历史", "groupsChanged" => "目录变更", "tagsChanged" => "标签变更", _ => "修改" };
 }

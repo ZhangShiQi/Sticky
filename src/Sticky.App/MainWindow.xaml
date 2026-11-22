@@ -4,11 +4,13 @@
         xmlns:controls="clr-namespace:Sticky.App.Controls"
         Icon="pack://application:,,,/Sticky;component/Assets/Sticky.ico"
         Title="Sticky · 本地便签" Width="1080" Height="740" MinWidth="820" MinHeight="540"
-        Background="#F8F8F6" WindowStartupLocation="CenterScreen" Closing="OnClosing">
+        Background="#F8F8F6" WindowStartupLocation="CenterScreen" Closing="OnClosing"
+        PreviewMouseMove="NoteDragMove" PreviewMouseLeftButtonUp="NoteDragEnd">
   <Window.Resources>
     <BooleanToVisibilityConverter x:Key="BoolVisibility" />
     <DataTemplate x:Key="PreviewCardTemplate">
-      <Border Background="{Binding Background}" CornerRadius="12" Width="300" Height="226" Margin="0,0,16,16" Padding="20,18" MouseLeftButtonDown="CardMouseDown" Cursor="Hand">
+      <Border Background="{Binding Background}" CornerRadius="12" Width="300" Height="226" Margin="0,0,16,16" Padding="20,18" MouseLeftButtonDown="CardMouseDown"
+              PreviewMouseLeftButtonDown="NoteDragStart" Cursor="Hand">
         <Grid>
           <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
           <DockPanel LastChildFill="True"><controls:LockIcon DockPanel.Dock="Left" IsUnlocked="True" Margin="0,0,7,0" VerticalAlignment="Center" Visibility="{Binding DataContext.IsVaultSelected, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolVisibility}}"/><TextBlock Text="{Binding Title}" FontSize="17" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" ToolTip="{Binding Title}"/></DockPanel>
@@ -16,14 +18,17 @@
           <DockPanel Grid.Row="2" Margin="0,0,0,10"><TextBlock Text="{Binding Updated}" FontSize="11" Foreground="#797A70"/><TextBlock Text="{Binding State}" FontSize="11" Foreground="#797A70" HorizontalAlignment="Right"/></DockPanel>
           <StackPanel Grid.Row="3" Orientation="Horizontal">
             <Button Content="{Binding Action}" Click="OpenCard" Padding="10,6" Background="#70FFFFFF" FontSize="12"/>
-            <Button Content="{Binding GroupName}" Click="MoveCard" DataContextChanged="CardContextChanged" Padding="8,6" Background="Transparent" FontSize="12" Foreground="#6B6D65" MaxWidth="85" ToolTip="移动到分组" Visibility="{Binding CanDelete, Converter={StaticResource BoolVisibility}}"/>
+            <Button Click="MoveCard" DataContextChanged="CardContextChanged" Padding="8,6" Background="Transparent" FontSize="12" Foreground="#6B6D65" MaxWidth="112" ToolTip="{Binding DirectoryPath}" AutomationProperties.Name="移动到目录" Visibility="{Binding CanDelete, Converter={StaticResource BoolVisibility}}">
+              <TextBlock Text="{Binding DirectoryPath}" TextTrimming="CharacterEllipsis"/>
+            </Button>
             <Button Content="···" Click="CardMenu" DataContextChanged="CardContextChanged" Padding="8,6" Background="Transparent" FontSize="12" ToolTip="更多操作"/>
           </StackPanel>
         </Grid>
       </Border>
     </DataTemplate>
     <DataTemplate x:Key="TitleCardTemplate">
-      <Button Width="208" Height="40" Margin="0,0,12,12" Padding="12,8" Background="{Binding Background}" HorizontalContentAlignment="Left" Click="OpenCard" DataContextChanged="CardContextChanged" ToolTip="{Binding Title}" AutomationProperties.Name="{Binding Title}">
+      <Button Width="208" Height="40" Margin="0,0,12,12" Padding="12,8" Background="{Binding Background}" HorizontalContentAlignment="Left" Click="OpenCard" DataContextChanged="CardContextChanged" ToolTip="{Binding Title}" AutomationProperties.Name="{Binding Title}"
+              PreviewMouseLeftButtonDown="NoteDragStart">
         <Button.ContextMenu><ContextMenu Opened="TitleCardMenuOpened"/></Button.ContextMenu>
         <DockPanel LastChildFill="True"><controls:LockIcon DockPanel.Dock="Left" IsUnlocked="True" Margin="0,0,7,0" VerticalAlignment="Center" Visibility="{Binding DataContext.IsVaultSelected, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolVisibility}}"/><TextBlock Text="{Binding Title}" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/></DockPanel>
       </Button>
@@ -31,6 +36,9 @@
     <Style x:Key="NavigationButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
       <Setter Property="HorizontalContentAlignment" Value="Left" /><Setter Property="Padding" Value="12,11" />
       <Setter Property="Margin" Value="0,0,0,6" /><Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style x:Key="DirectoryTargetButton" TargetType="Button" BasedOn="{StaticResource NavigationButton}">
+      <Setter Property="BorderThickness" Value="1"/><Setter Property="BorderBrush" Value="Transparent"/>
     </Style>
   </Window.Resources>
   <Grid>
@@ -44,18 +52,56 @@
         </StackPanel>
         <Grid Grid.Row="1" Margin="12,0,4,12">
           <TextBlock Text="工作空间" Foreground="#7C8277" FontSize="12" VerticalAlignment="Center" />
-          <Button Content="＋" Click="NewGroup" Padding="6,2" Margin="0" HorizontalAlignment="Right" Background="Transparent" ToolTip="新建分组" AutomationProperties.Name="新建分组" />
+          <Button Content="＋" Click="NewDirectory" Padding="6,2" Margin="0" HorizontalAlignment="Right" Background="Transparent" ToolTip="新建目录" AutomationProperties.Name="新建目录" />
         </Grid>
         <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
           <StackPanel x:Name="WorkspaceNavigation">
-            <Button x:Name="AllNotesButton" Content="▤   全部便签" Click="ShowNotes" Style="{StaticResource NavigationButton}" Background="{Binding AllBackground}" />
-            <ItemsControl x:Name="GroupNavigation" ItemsSource="{Binding GroupItems}"><ItemsControl.ItemTemplate><DataTemplate>
-              <Button Click="SelectGroup" Style="{StaticResource NavigationButton}" Background="{Binding Background}" ToolTip="{Binding Group.Name}">
-                <TextBlock Text="{Binding Label}" TextTrimming="CharacterEllipsis" MaxWidth="134" />
-                <Button.ContextMenu><ContextMenu><MenuItem Header="重命名分组…" Click="RenameGroup" /></ContextMenu></Button.ContextMenu>
-              </Button>
-            </DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
-            <Button x:Name="UngroupedButton" Content="未分组" Click="ShowUngrouped" Style="{StaticResource NavigationButton}" Background="{Binding UngroupedBackground}" />
+            <TreeView x:Name="DirectoryNavigation" ItemsSource="{Binding DirectoryItems}" AutomationProperties.Name="工作空间目录"
+                      SelectedItemChanged="DirectoryTreeSelectionChanged" Background="Transparent" BorderThickness="0" Padding="0" Margin="0,0,0,6"
+                      ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Disabled">
+              <TreeView.Resources>
+                <Style TargetType="TreeViewItem">
+                  <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
+                  <Setter Property="AutomationProperties.Name" Value="{Binding Path}"/>
+                  <Setter Property="Template">
+                    <Setter.Value>
+                      <ControlTemplate TargetType="TreeViewItem">
+                        <Grid>
+                          <Grid.ColumnDefinitions><ColumnDefinition Width="14"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                          <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                          <ToggleButton x:Name="ExpandDirectory" Focusable="False" ClickMode="Press" AutomationProperties.Name="展开或折叠目录"
+                                        IsChecked="{Binding IsExpanded, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}">
+                            <ToggleButton.Template>
+                              <ControlTemplate TargetType="ToggleButton">
+                                <Border Background="Transparent">
+                                  <Path x:Name="Arrow" Stroke="#5B6E60" StrokeThickness="1.5" Data="M1,1 L5,5 L1,9" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                </Border>
+                                <ControlTemplate.Triggers><Trigger Property="IsChecked" Value="True"><Setter TargetName="Arrow" Property="Data" Value="M1,1 L5,5 L9,1" /></Trigger></ControlTemplate.Triggers>
+                              </ControlTemplate>
+                            </ToggleButton.Template>
+                          </ToggleButton>
+                          <ContentPresenter Grid.Column="1" ContentSource="Header" />
+                          <ItemsPresenter x:Name="ChildDirectories" Grid.Column="1" Grid.Row="1" />
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                          <Trigger Property="HasItems" Value="False"><Setter TargetName="ExpandDirectory" Property="Visibility" Value="Hidden"/></Trigger>
+                          <Trigger Property="IsExpanded" Value="False"><Setter TargetName="ChildDirectories" Property="Visibility" Value="Collapsed"/></Trigger>
+                        </ControlTemplate.Triggers>
+                      </ControlTemplate>
+                    </Setter.Value>
+                  </Setter>
+                </Style>
+              </TreeView.Resources>
+              <TreeView.ItemTemplate>
+                <HierarchicalDataTemplate ItemsSource="{Binding Children}">
+                  <Button Click="SelectDirectory" Style="{StaticResource DirectoryTargetButton}" Background="{Binding Background}" ToolTip="{Binding Path}"
+                          Padding="8,8" Margin="0,0,0,2" AllowDrop="True" DragOver="DirectoryDragOver" DragLeave="DirectoryDragLeave" Drop="DirectoryDrop">
+                    <TextBlock Text="{Binding Label}" TextTrimming="CharacterEllipsis" MaxWidth="126" />
+                    <Button.ContextMenu><ContextMenu Opened="DirectoryMenuOpened" /></Button.ContextMenu>
+                  </Button>
+                </HierarchicalDataTemplate>
+              </TreeView.ItemTemplate>
+            </TreeView>
             <Button x:Name="TrashButton" Content="↺   回收站" Click="ShowTrash" Style="{StaticResource NavigationButton}" Background="{Binding TrashBackground}" />
             <Button x:Name="VaultButton" Background="{Binding VaultBackground}" Click="OpenVault" Style="{StaticResource NavigationButton}" ToolTip="{Binding VaultLockHint}">
               <StackPanel Orientation="Horizontal"><controls:LockIcon IsUnlocked="{Binding IsVaultUnlocked}" Margin="0,0,10,0"/><TextBlock Text="保险箱" VerticalAlignment="Center"/></StackPanel>
@@ -80,8 +126,8 @@
       <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
       <Grid>
         <StackPanel Margin="0,0,170,0">
-          <DockPanel LastChildFill="True"><controls:LockIcon Width="24" Height="24" Margin="0,0,10,0" VerticalAlignment="Center" IsUnlocked="{Binding IsVaultUnlocked}" Visibility="{Binding IsVaultSelected, Converter={StaticResource BoolVisibility}}"/><TextBlock Text="{Binding Heading}" FontSize="30" FontWeight="SemiBold" /></DockPanel>
-          <TextBlock Text="{Binding Subtitle}" Foreground="{StaticResource Muted}" Margin="0,8,0,0" />
+          <DockPanel LastChildFill="True"><controls:LockIcon Width="24" Height="24" Margin="0,0,10,0" VerticalAlignment="Center" IsUnlocked="{Binding IsVaultUnlocked}" Visibility="{Binding IsVaultSelected, Converter={StaticResource BoolVisibility}}"/><TextBlock Text="{Binding Heading}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Heading}" FontSize="30" FontWeight="SemiBold" /></DockPanel>
+          <TextBlock Text="{Binding Subtitle}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Subtitle}" Foreground="{StaticResource Muted}" Margin="0,8,0,0" />
         </StackPanel>
         <Button IsEnabled="{Binding CanCreateNote}" Content="＋ 新建便签" Style="{StaticResource PrimaryButton}" HorizontalAlignment="Right" VerticalAlignment="Top" Click="NewNote" Margin="0,4,0,0" Padding="18,12" ToolTip="Ctrl+N" />
       </Grid>
@@ -106,9 +152,26 @@
             </StackPanel>
           </Button>
         </StackPanel>
-        <Button Content="重命名分组…" Click="RenameSelectedGroup" HorizontalAlignment="Right" Background="Transparent" Padding="8,3" Margin="0" Visibility="{Binding HasSelectedGroup, Converter={StaticResource BoolVisibility}}" />
+        <Button Content="重命名目录…" Click="RenameSelectedDirectory" HorizontalAlignment="Right" Background="Transparent" Padding="8,3" Margin="0" Visibility="{Binding HasSelectedDirectory, Converter={StaticResource BoolVisibility}}" />
       </Grid>
-      <ListBox x:Name="NotesList" Grid.Row="2" ItemsSource="{Binding Cards}" Background="Transparent" BorderThickness="0" Padding="0"
+      <Grid Grid.Row="2">
+        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+        <ScrollViewer MaxHeight="200" VerticalScrollBarVisibility="Auto"
+                      Visibility="{Binding HasTrashedDirectories, Converter={StaticResource BoolVisibility}}">
+          <ItemsControl ItemsSource="{Binding TrashedDirectories}" AutomationProperties.Name="回收站中的目录">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <Border Background="#EEF0E9" CornerRadius="8" Padding="12,8" Margin="0,0,8,8">
+                  <DockPanel>
+                    <Button DockPanel.Dock="Right" Content="恢复目录" Click="RestoreDirectory" Margin="8,0,0,0" Padding="10,5" />
+                    <TextBlock Text="{Binding Path}" ToolTip="{Binding Path}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                  </DockPanel>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </ScrollViewer>
+      <ListBox x:Name="NotesList" Grid.Row="1" ItemsSource="{Binding Cards}" Background="Transparent" BorderThickness="0" Padding="0"
                ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.CanContentScroll="True"
                VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling" HorizontalContentAlignment="Stretch" AutomationProperties.Name="便签列表">
         <ListBox.Style><Style TargetType="ListBox"><Setter Property="ItemTemplate" Value="{StaticResource PreviewCardTemplate}"/>
@@ -119,11 +182,12 @@
           <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ListBoxItem"><ContentPresenter HorizontalAlignment="Stretch" VerticalAlignment="Stretch"/></ControlTemplate></Setter.Value></Setter>
         </Style></ListBox.ItemContainerStyle>
       </ListBox>
-      <StackPanel Grid.Row="2" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding IsEmpty, Converter={StaticResource BoolVisibility}}" IsHitTestVisible="False">
+      <StackPanel Grid.Row="1" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding IsEmpty, Converter={StaticResource BoolVisibility}}" IsHitTestVisible="False">
         <TextBlock Text="▤" FontSize="48" Foreground="#B1BAAA" HorizontalAlignment="Center" Margin="0,0,0,18" />
         <TextBlock Text="{Binding EmptyTitle}" FontSize="20" HorizontalAlignment="Center" />
         <TextBlock Text="{Binding EmptyDescription}" Foreground="{StaticResource Muted}" Margin="0,10,0,0" />
       </StackPanel>
+      </Grid>
       <TextBlock Grid.Row="3" Text="{Binding Summary}" Foreground="{StaticResource Muted}" FontSize="11" Margin="0,12,0,0" />
     </Grid>
     <Border x:Name="StartupOverlay" Grid.ColumnSpan="2" Panel.ZIndex="100" Background="#F8F8F6" Visibility="Collapsed">

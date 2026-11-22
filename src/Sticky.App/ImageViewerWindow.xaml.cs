@@ -4,6 +4,7 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Windows.Threading;
 using Sticky.Storage;
 
 namespace Sticky.App;
@@ -83,7 +84,11 @@ public partial class ImageViewerWindow : Window
     private void FitClicked(object sender, RoutedEventArgs e) => FitImage();
     private void ViewportSizeChanged(object sender, SizeChangedEventArgs e) { if (IsLoaded && _fit && !_closed && !_settingZoom) FitImage(); }
     private void CloseViewer() { if (!_closed && !_closing) { _closing = true; Close(); } }
-    private void ViewerDeactivated(object? sender, EventArgs e) => CloseViewer();
+    private void ViewerDeactivated(object? sender, EventArgs e)
+    {
+        // Let the next window finish activating before closing an owned viewer.
+        Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() => { if (!IsActive) CloseViewer(); }));
+    }
     private void CloseClicked(object sender, RoutedEventArgs e) => CloseViewer();
     private void ViewerKeyDown(object sender, KeyEventArgs e)
     {

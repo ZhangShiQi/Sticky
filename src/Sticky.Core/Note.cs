@@ -6,12 +6,17 @@ public sealed class Note
 {
     public const int RichTextVersion = 1;
     public const int MarkdownVersion = 2;
+    public const int TaggedRichTextVersion = 3;
+    public const int TaggedMarkdownVersion = 4;
 
     public int SchemaVersion { get; set; } = RichTextVersion;
     public Guid Id { get; set; } = Guid.NewGuid();
     public string Title { get; set; } = "";
     public string Color { get; set; } = "amber";
-    public Guid? GroupId { get; set; }
+    [JsonPropertyName("groupId")]
+    public Guid? DirectoryId { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<Guid>? TagIds { get; set; }
     public Guid? ConflictOf { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset ModifiedAt { get; set; } = DateTimeOffset.UtcNow;
@@ -32,26 +37,37 @@ public sealed class Note
         }
     }
 
-    [JsonIgnore] public bool IsMarkdown => SchemaVersion == MarkdownVersion;
+    [JsonIgnore] public bool IsMarkdown => SchemaVersion is MarkdownVersion or TaggedMarkdownVersion;
     [JsonIgnore] public string FormatLabel => IsMarkdown ? "Markdown" : "富文本";
+    [JsonIgnore] public IReadOnlyList<Guid> Tags => TagIds is null ? Array.Empty<Guid>() : TagIds;
+
+    public void SetTags(IEnumerable<Guid> ids)
+    {
+        var markdown = IsMarkdown;
+        var tags = ids.Distinct().Order().ToList();
+        TagIds = tags.Count > 0 ? tags : null;
+        SchemaVersion = markdown ? (TagIds is null ? MarkdownVersion : TaggedMarkdownVersion)
+            : (TagIds is null ? RichTextVersion : TaggedRichTextVersion);
+    }
 
     public void SetMarkdown(string source)
     {
-        SchemaVersion = MarkdownVersion;
+        SchemaVersion = Tags.Count == 0 ? MarkdownVersion : TaggedMarkdownVersion;
         MarkdownSource = source;
         Blocks = [];
     }
 
     public void SetRichText(List<NoteBlock> blocks)
     {
-        SchemaVersion = RichTextVersion;
+        SchemaVersion = Tags.Count == 0 ? RichTextVersion : TaggedRichTextVersion;
         MarkdownSource = null;
         Blocks = blocks;
     }
 
     public void CopyBodyFrom(Note note)
     {
-        SchemaVersion = note.SchemaVersion;
+        SchemaVersion = note.IsMarkdown ? (Tags.Count == 0 ? MarkdownVersion : TaggedMarkdownVersion)
+            : (Tags.Count == 0 ? RichTextVersion : TaggedRichTextVersion);
         MarkdownSource = note.MarkdownSource;
         Blocks = note.Blocks;
     }
@@ -128,18 +144,6 @@ public sealed class WindowState
 public sealed class DeviceState
 {
     public Dictionary<Guid, WindowState> Windows { get; set; } = [];
-}
-
-public sealed class NoteGroup
-{
-    public Guid Id { get; set; } = Guid.NewGuid();
-    public string Name { get; set; } = "";
-}
-
-public sealed class GroupCatalog
-{
-    public int SchemaVersion { get; set; } = 1;
-    public List<NoteGroup> Groups { get; set; } = [];
 }
 
 public sealed class EditorPreferences

@@ -43,8 +43,8 @@ public sealed class HistoryTimeline
                     continue;
                 }
             }
-            // Group operations can change the meaning of a note's group between two edits.
-            if (entry.Target == "groups.json") pending.Clear();
+            // Moving or renaming a directory can change a note's path between two edits.
+            if (entry.Target is "groups.json" or NoteStore.TagsFile) pending.Clear();
             pending[entry.Target] = result.Count;
             result.Add(new(entry, entry, 1));
         }
@@ -73,15 +73,16 @@ public sealed class HistoryTimeline
     public HistoryFrame Frame(long sequence)
     {
         var refs = ProjectReferences(sequence);
-        var notes = new Dictionary<Guid, Note>(); var groups = new List<NoteGroup>(); var layout = new DeviceState();
+        var notes = new Dictionary<Guid, Note>(); var directories = new List<NoteDirectory>(); var tags = new List<NoteTag>(); var layout = new DeviceState();
         foreach (var (target, hash) in refs.Documents)
         {
             var bytes = _store.ReadObject(hash);
             if (target.StartsWith("notes/", StringComparison.Ordinal)) { var id = Guid.Parse(Path.GetFileNameWithoutExtension(target)); notes.Add(id, NoteStore.ParseNote(bytes, id)); }
-            else if (target == "groups.json") groups = NoteStore.ParseGroups(bytes);
+            else if (target == "groups.json") directories = NoteStore.ParseDirectories(bytes);
+            else if (target == NoteStore.TagsFile) tags = NoteStore.ParseTags(bytes);
             else if (target == "device/windows.json") layout = HistoryStore.Decode<DeviceState>(bytes);
         }
-        return new HistoryFrame { Sequence = sequence, Notes = notes, Groups = groups, Layout = layout };
+        return new HistoryFrame { Sequence = sequence, Notes = notes, Directories = directories, Tags = tags, Layout = layout };
     }
     public (double Left, double Top, double Right, double Bottom) DesktopBounds(Guid? noteId = null)
     {

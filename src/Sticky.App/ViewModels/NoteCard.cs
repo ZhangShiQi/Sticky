@@ -8,7 +8,7 @@ public sealed class NoteCard : INotifyPropertyChanged
 {
     public Note Note { get; }
     public bool IsOpen { get; private set; }
-    public string GroupName { get; private set; }
+    public string DirectoryPath { get; private set; }
     private DateTimeOffset _modified;
     private DateTimeOffset? _deleted;
     private Guid? _conflict;
@@ -17,14 +17,14 @@ public sealed class NoteCard : INotifyPropertyChanged
     private string? _markdown;
     private string? _title, _preview;
     public event PropertyChangedEventHandler? PropertyChanged;
-    public NoteCard(Note note, bool isOpen, string groupName = "未分组")
-    { Note = note; GroupName = groupName; Update(isOpen, groupName); }
-    public void Update(bool isOpen, string groupName)
+    public NoteCard(Note note, bool isOpen, string directoryPath = DirectoryHierarchy.UnassignedLabel)
+    { Note = note; DirectoryPath = directoryPath; Update(isOpen, directoryPath); }
+    public void Update(bool isOpen, string directoryPath)
     {
         var changed = _modified != Note.ModifiedAt || _deleted != Note.DeletedAt || _conflict != Note.ConflictOf
             || _manualTitle != Note.Title || _color != Note.Color || _markdown != Note.MarkdownSource || !ReferenceEquals(_blocks, Note.Blocks);
-        var stateChanged = IsOpen != isOpen || GroupName != groupName;
-        IsOpen = isOpen; GroupName = groupName;
+        var stateChanged = IsOpen != isOpen || DirectoryPath != directoryPath;
+        IsOpen = isOpen; DirectoryPath = directoryPath;
         if (!changed && !stateChanged) return;
         if (changed) { _title = null; _preview = null; }
         _modified = Note.ModifiedAt; _deleted = Note.DeletedAt; _conflict = Note.ConflictOf;

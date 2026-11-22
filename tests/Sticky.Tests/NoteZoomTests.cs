@@ -26,8 +26,10 @@ internal static partial class Program
         ] };
         var markdown = new Note();
         markdown.SetMarkdown("## Markdown\n\n编辑时保留选区与源码");
+        var directory = workspace.CreateDirectory("缩放测试")!;
         foreach (var note in new[] { rich, markdown })
         {
+            note.DirectoryId = directory.Id;
             workspace.Store.Save(note);
             workspace.Notes.Add(note);
         }

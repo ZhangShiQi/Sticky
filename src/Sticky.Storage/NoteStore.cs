@@ -93,7 +93,7 @@ public sealed partial class NoteStore
     {
         var note = JsonSerializer.Deserialize<Note>(bytes, JsonOptions)
                    ?? throw new InvalidDataException("便签内容为空。");
-        if (note.SchemaVersion is not (Note.RichTextVersion or Note.MarkdownVersion))
+        if (!SupportedNoteSchema(note.SchemaVersion))
             throw new UnsupportedVersionException("此便签需要其他版本的 Sticky 才能读取");
         if (note.Id != expectedId) throw new InvalidDataException("便签标识不匹配。");
         Validate(note);
@@ -104,7 +104,7 @@ public sealed partial class NoteStore
     {
         Validate(note);
         if (_vault is not null) { _vault.Save(note); return; }
-        if ((note.Title.Length != 0 || note.Blocks.Count != 0 || note.MarkdownSource is not null || note.DeletedAt is null)
+        if ((note.Title.Length != 0 || note.Blocks.Count != 0 || note.MarkdownSource is not null || note.DeletedAt is null || note.Tags.Count > 0)
             && new VaultMigration(this).MovedIds.Contains(note.Id))
             throw new InvalidOperationException("此便签已移入保险箱，不能将旧版本恢复为明文；请使用保险箱。需要明文副本时请从保险箱移出。");
         var bytes = JsonSerializer.SerializeToUtf8Bytes(note, JsonOptions);
@@ -114,12 +114,17 @@ public sealed partial class NoteStore
 
     private static void Validate(Note note)
     {
-        if (note.SchemaVersion is not (Note.RichTextVersion or Note.MarkdownVersion)
+        if (!SupportedNoteSchema(note.SchemaVersion)
             || note.Id == Guid.Empty || note.Title is null || note.Title.Length > 500 || note.Blocks is null
             || (note.IsMarkdown ? note.MarkdownSource is null || note.Blocks.Count != 0 : note.MarkdownSource is not null))
             throw new InvalidDataException("便签格式无效。");
+        var tagged = note.SchemaVersion is Note.TaggedRichTextVersion or Note.TaggedMarkdownVersion;
+        if (tagged != (note.Tags.Count > 0) || note.Tags.Any(id => id == Guid.Empty) || note.Tags.Distinct().Count() != note.Tags.Count)
+            throw new InvalidDataException("便签的标签标识无效。");
         ValidateBlocks(note.Blocks, 0);
     }
+
+    private static bool SupportedNoteSchema(int version) => version is Note.RichTextVersion or Note.MarkdownVersion or Note.TaggedRichTextVersion or Note.TaggedMarkdownVersion;
 
     private static void ValidateBlocks(List<NoteBlock> blocks, int depth)
     {

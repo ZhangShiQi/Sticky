@@ -18,7 +18,9 @@ public sealed class SyncSettings
 public sealed class SyncSnapshot
 {
     public Dictionary<Guid, Note> Notes { get; set; } = [];
-    public List<NoteGroup> Groups { get; set; } = [];
+    [JsonPropertyName("groups")]
+    public List<NoteDirectory> Directories { get; set; } = [];
+    public List<NoteTag> Tags { get; set; } = [];
     public AiCatalog? Ai { get; set; }
     [JsonIgnore] public Dictionary<string, byte[]> Assets { get; } = new(StringComparer.Ordinal);
 

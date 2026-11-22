@@ -22,7 +22,7 @@
     </Style>
     <Style x:Key="FormatToggle" TargetType="ToggleButton">
       <Setter Property="Focusable" Value="False" /><Setter Property="Foreground" Value="#DEDEDE" />
-      <Setter Property="Width" Value="31" /><Setter Property="Height" Value="30" /><Setter Property="Cursor" Value="Hand" />
+      <Setter Property="Width" Value="29" /><Setter Property="Height" Value="30" /><Setter Property="Cursor" Value="Hand" />
       <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ToggleButton">
         <Border x:Name="ToggleSurface" CornerRadius="4" Background="Transparent"><ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
         <ControlTemplate.Triggers>
@@ -68,7 +68,7 @@
         <DockPanel Visibility="{Binding IsHeaderExpanded, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolVisibility}}" LastChildFill="True">
           <Button DockPanel.Dock="Left" Content="＋" FontSize="22" Style="{StaticResource HeaderButton}" Click="NewNote" ToolTip="新建便签 · Ctrl+N" AutomationProperties.Name="新建便签" />
           <Button DockPanel.Dock="Right" Content="×" FontSize="22" Style="{StaticResource HeaderButton}" Click="CloseNote" ToolTip="关闭窗口，保留便签" AutomationProperties.Name="关闭便签" />
-          <Button x:Name="MoreButton" DockPanel.Dock="Right" Content="···" FontSize="18" Style="{StaticResource HeaderButton}" Click="OpenMenu" ToolTip="分组、颜色和更多操作" AutomationProperties.Name="便签菜单" />
+          <Button x:Name="MoreButton" DockPanel.Dock="Right" Content="···" FontSize="18" Style="{StaticResource HeaderButton}" Click="OpenMenu" ToolTip="目录、颜色和更多操作" AutomationProperties.Name="便签菜单" />
           <Button x:Name="ColorButton" DockPanel.Dock="Right" Style="{StaticResource HeaderButton}" Click="OpenColorPalette" ToolTip="更改便签颜色" AutomationProperties.Name="便签颜色">
             <Border x:Name="ColorSwatch" Width="14" Height="14" CornerRadius="2" Background="#FFF1CA" BorderBrush="#80372C40" BorderThickness="1" />
           </Button>
@@ -101,20 +101,28 @@
               IsHitTestVisible="False">
         <TextBlock x:Name="ZoomBadgeText" Foreground="#FAFAFA" FontSize="12" FontWeight="SemiBold" />
       </Border>
-      <Border Grid.Row="2" x:Name="FormattingBar" BorderBrush="#18FFFFFF" BorderThickness="0,1,0,0" Padding="7,3"
-              Visibility="{Binding IsEditing, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolVisibility}}">
+      <Border Grid.Row="2" x:Name="FooterBar" BorderBrush="#18FFFFFF" BorderThickness="0,1,0,0" Padding="7,3">
+        <Grid MinHeight="30">
+        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+        <Border x:Name="FormattingBar" Visibility="{Binding IsEditing, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolVisibility}}">
         <StackPanel Orientation="Horizontal">
           <StackPanel x:Name="RichTextTools" Orientation="Horizontal">
           <ToggleButton x:Name="BoldButton" Content="B" FontWeight="Bold" Style="{StaticResource FormatToggle}" Command="EditingCommands.ToggleBold" CommandTarget="{Binding ElementName=Editor}" ToolTip="加粗 · Ctrl+B" />
           <ToggleButton x:Name="ItalicButton" Content="I" FontStyle="Italic" Style="{StaticResource FormatToggle}" Command="EditingCommands.ToggleItalic" CommandTarget="{Binding ElementName=Editor}" ToolTip="斜体 · Ctrl+I" />
           <ToggleButton x:Name="UnderlineButton" Style="{StaticResource FormatToggle}" Command="EditingCommands.ToggleUnderline" CommandTarget="{Binding ElementName=Editor}" ToolTip="下划线 · Ctrl+U"><TextBlock Text="U" TextDecorations="Underline" /></ToggleButton>
           <ToggleButton x:Name="StrikeButton" Style="{StaticResource FormatToggle}" Click="ToggleStrike" ToolTip="删除线"><TextBlock Text="ab" TextDecorations="Strikethrough" /></ToggleButton>
-          <Button Content="• ≡" Style="{StaticResource NoteButton}" Command="EditingCommands.ToggleBullets" CommandTarget="{Binding ElementName=Editor}" ToolTip="项目列表" />
-          <Button Content="1 ≡" Style="{StaticResource NoteButton}" Command="EditingCommands.ToggleNumbering" CommandTarget="{Binding ElementName=Editor}" ToolTip="编号列表" />
+          <Button Content="• ≡" Width="30" Padding="2,4" Style="{StaticResource NoteButton}" Command="EditingCommands.ToggleBullets" CommandTarget="{Binding ElementName=Editor}" ToolTip="项目列表" />
+          <Button Content="1 ≡" Width="30" Padding="2,4" Style="{StaticResource NoteButton}" Command="EditingCommands.ToggleNumbering" CommandTarget="{Binding ElementName=Editor}" ToolTip="编号列表" />
           </StackPanel>
           <Button Content="▧" FontSize="21" Style="{StaticResource NoteButton}" Click="InsertImage" ToolTip="插入图片，也可粘贴截图或拖入图片" AutomationProperties.Name="插入图片" />
           <Button x:Name="AiButton" Content="AI" FontSize="12" Style="{StaticResource NoteButton}" Click="AiPolishClicked" ToolTip="选择 AI 功能，处理选中文字" AutomationProperties.Name="AI 功能菜单"/>
         </StackPanel>
+        </Border>
+        <Grid Grid.Column="1" x:Name="TagStrip" Margin="3,0,0,0" ClipToBounds="True" Background="Transparent"
+              SizeChanged="TagStripSizeChanged" MouseLeftButtonDown="TagStripMouseDown" AutomationProperties.Name="便签标签">
+          <StackPanel x:Name="TagStripItems" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center" />
+        </Grid>
+        </Grid>
       </Border>
       <!-- Metadata is edited through the menu and never consumes document space. -->
       <TextBox x:Name="TitleBox" Visibility="Collapsed" MaxLength="500" TextChanged="ContentChanged" />

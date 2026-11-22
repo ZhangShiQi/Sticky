@@ -73,8 +73,14 @@ internal static partial class Program
         Run("Crowded nearby placement cascades distinctly instead of jumping far away", CrowdedNearbyPlacement);
         Run("Repeated new-note actions avoid visible windows and ignore minimized notes", RepeatedNearbyWindows);
         Run("Failed autosave retains edits and succeeds after the file unlocks", FailedAutosave);
-        Run("Groups persist, rename, move and filter independently from search", GroupLifecycle);
+        Run("Directories persist, rename, move and filter independently from search", GroupLifecycle);
         Run("Backup import remaps conflicting group IDs without overwriting groups", GroupBackup);
+        Run("Directory trees load legacy records and keep parent paths through ZIP import", DirectoryCatalogAndBackup);
+        Run("Directory tree navigation, moves and replay preserve one directory per note", DirectoryWorkspaceAndHistory);
+        Run("Notes without a legacy directory are filed in an ordinary inbox", LegacyDirectoryAssignment);
+        Run("Directory trash restores a subtree and keeps individually deleted notes in trash", DirectoryTrashLifecycle);
+        Run("Note tags auto-save, filter across directories and overflow in the footer", NoteTagInteraction);
+        Run("Note tags survive history restore and ZIP import", NoteTagPersistence);
         Run("Sync configuration rejects tokens in URLs and non-GitHub destinations", GitIntegrationTests.ConfigValidation);
         Run("Git transfers rich text, groups and images without device settings", () => GitTest("git-round-trip", GitIntegrationTests.RoundTrip));
         Run("Two-device conflicts preserve both versions and do not duplicate on retry", () => GitTest("git-conflict", GitIntegrationTests.Conflict));
@@ -84,7 +90,9 @@ internal static partial class Program
         Run("Non-fast-forward pushes retry without force and retain concurrent commits", () => GitTest("git-push-race", GitIntegrationTests.PushRace));
         Run("Sync preserves unrelated files already present on the branch", () => GitTest("git-other-files", GitIntegrationTests.PreserveOtherFiles));
         Run("Corrupt remote JSON never overwrites healthy local data", () => GitTest("git-corrupt-remote", GitIntegrationTests.RejectInvalidRemote));
-        Run("Concurrent equal group creation converges to one membership", () => GitTest("git-groups", GitIntegrationTests.Groups));
+        Run("Concurrent directory trees and note moves converge across devices", () => GitTest("git-directories", GitIntegrationTests.Directories));
+        Run("Git sync transfers directory trash, restores and empty directory deletions", () => GitTest("git-directory-trash", GitIntegrationTests.DirectoryTrash));
+        Run("Git sync combines independent note tags and body changes", () => GitTest("git-note-tags", GitIntegrationTests.NoteTags));
         Run("Edits made while sync is running remain in the original editor", InFlightEditing);
         Run("Previously edited conflict copies are never overwritten or reused", EditedConflictCopy);
         Run("Unreadable local notes block synchronization without replacing their files", UnreadableLocalSync);
@@ -199,7 +207,7 @@ internal static partial class Program
     }
     private static void UnsupportedSchema()
     {
-        var store = Store("future"); var id = Guid.NewGuid(); var json = $"{{\"schemaVersion\":{Note.MarkdownVersion + 1},\"id\":\"{id}\"}}";
+        var store = Store("future"); var id = Guid.NewGuid(); var json = $"{{\"schemaVersion\":{Note.TaggedMarkdownVersion + 1},\"id\":\"{id}\"}}";
         var path = Path.Combine(store.NotesDirectory, id + ".json"); File.WriteAllText(path, json);
         var backup = Example(); backup.Id = id;
         var oldStore = Store("old-version"); oldStore.Save(backup);
@@ -418,24 +426,24 @@ internal static partial class Program
     private static void GroupLifecycle()
     {
         var workspace = new StickyWorkspace(Path.Combine(_root, "groups"));
-        var work = workspace.CreateGroup("工作") ?? throw new Exception("Create group failed.");
-        var personal = workspace.CreateGroup("生活") ?? throw new Exception("Create group failed.");
-        var empty = workspace.CreateGroup("空分组") ?? throw new Exception("Create empty group failed.");
-        var note = Example(); note.GroupId = work.Id; workspace.Store.Save(note); workspace.Notes.Add(note);
+        var work = workspace.CreateDirectory("工作") ?? throw new Exception("Create group failed.");
+        var personal = workspace.CreateDirectory("生活") ?? throw new Exception("Create group failed.");
+        var empty = workspace.CreateDirectory("空目录") ?? throw new Exception("Create empty group failed.");
+        var note = Example(); note.DirectoryId = work.Id; workspace.Store.Save(note); workspace.Notes.Add(note);
         using var manager = new MainViewModel(workspace);
-        manager.SelectGroup(work.Id); Check(manager.Cards.Count == 1, "Group filter missed its note.");
+        manager.SelectDirectory(work.Id); Check(manager.Cards.Count == 1, "Group filter missed its note.");
         Check(workspace.MoveNote(note, personal.Id), "Moving note failed.");
         Check(manager.Cards.Count == 0, "Moving note did not update previous group.");
-        Check(workspace.RenameGroup(personal, "日常"), "Rename group failed.");
-        manager.SelectGroup(personal.Id); Check(manager.Cards.Single().GroupName == "日常", "Group rename lost note membership.");
+        Check(workspace.RenameDirectory(personal, "日常"), "Rename group failed.");
+        manager.SelectDirectory(personal.Id); Check(manager.Cards.Single().DirectoryPath == "日常", "Group rename lost note membership.");
         using var search = new SearchViewModel(workspace);
         search.Query = "任务一"; Check(search.Results.Single().Note.Id == note.Id, "Body search did not find note.");
         search.Scope = search.Scopes.Single(s => s.Id == work.Id); Check(search.Results.Count == 0, "Search ignored group scope.");
         search.Scope = search.Scopes.Single(s => s.Id == personal.Id); Check(search.Results.Count == 1, "Search missed group note.");
         var reopened = new StickyWorkspace(workspace.Store.Root);
-        Check(reopened.Groups.Any(g => g.Id == empty.Id) && reopened.Notes.Single().GroupId == personal.Id && reopened.GroupName(personal.Id) == "日常", "Restart lost empty groups or membership.");
-        Check(workspace.MoveNote(note, null), "Move to ungrouped failed.");
-        manager.SelectGroup(null, true); Check(manager.Cards.Count == 1, "Ungrouped filter missed note.");
+        Check(reopened.Directories.Any(g => g.Id == empty.Id) && reopened.Notes.Single().DirectoryId == personal.Id && reopened.DirectoryPath(personal.Id) == "日常", "Restart lost empty groups or membership.");
+        Check(workspace.MoveNote(note, empty.Id), "Move to an empty directory failed.");
+        manager.SelectDirectory(empty.Id); Check(manager.Cards.Count == 1, "The destination directory missed its note.");
         var searchWindow = new SearchWindow(workspace); searchWindow.Show();
         Check(searchWindow.FindName("QueryBox") is TextBox, "Search is not available in a separate window.");
         searchWindow.Close();
@@ -443,12 +451,12 @@ internal static partial class Program
 
     private static void GroupBackup()
     {
-        var source = Store("group-export"); var group = new NoteGroup { Name = "项目" }; source.SaveGroups([group]);
-        var note = Example(); note.GroupId = group.Id; source.Save(note);
+        var source = Store("group-export"); var group = new NoteDirectory { Name = "项目" }; source.SaveDirectories([group]);
+        var note = Example(); note.DirectoryId = group.Id; source.Save(note);
         var zip = Path.Combine(_root, "groups-backup.zip"); BackupService.Export(source, zip);
-        var target = Store("group-import"); target.SaveGroups([new NoteGroup { Id = group.Id, Name = "不同的本地分组" }]);
-        var imported = BackupService.Import(target, zip).Single(); var groups = target.LoadGroups();
-        Check(imported.GroupId != group.Id && groups.Single(g => g.Id == imported.GroupId).Name == "项目" && groups.Single(g => g.Id == group.Id).Name == "不同的本地分组", "Group ID collision overwrote or misassigned membership.");
+        var target = Store("group-import"); target.SaveDirectories([new NoteDirectory { Id = group.Id, Name = "不同的本地目录" }]);
+        var imported = BackupService.Import(target, zip).Single(); var groups = target.LoadDirectories();
+        Check(imported.DirectoryId != group.Id && groups.Single(g => g.Id == imported.DirectoryId).Name == "项目" && groups.Single(g => g.Id == group.Id).Name == "不同的本地目录", "Group ID collision overwrote or misassigned membership.");
     }
 
     private static void InFlightEditing()
@@ -534,14 +542,15 @@ internal static partial class Program
     private static void SidebarAndSettings()
     {
         var workspace = new StickyWorkspace(Path.Combine(_root, "sidebar-settings"));
-        var group = workspace.CreateGroup("工作") ?? throw new Exception("Create group failed.");
-        var note = Example(); workspace.Store.Save(note); workspace.Notes.Add(note);
+        var group = workspace.CreateDirectory("工作") ?? throw new Exception("Create group failed.");
+        var note = Example(); note.DirectoryId = group.Id; workspace.Store.Save(note); workspace.Notes.Add(note);
         var main = new MainWindow(workspace); main.Show(); Pump(30);
         var navigation = (StackPanel)main.FindName("WorkspaceNavigation");
-        Check(navigation.Children[0] == main.FindName("AllNotesButton") && navigation.Children[1] == main.FindName("GroupNavigation")
-            && navigation.Children[2] == main.FindName("UngroupedButton") && navigation.Children[3] == main.FindName("TrashButton"), "Workspace order is incorrect.");
+        Check(navigation.Children[0] == main.FindName("DirectoryNavigation") && navigation.Children[1] == main.FindName("TrashButton") &&
+            main.FindName("AllNotesButton") is null && main.FindName("RootDirectoryButton") is null, "Workspace navigation exposed a synthetic directory or aggregate note list.");
         var manager = (MainViewModel)main.DataContext;
-        manager.SelectGroup(group.Id); Check(manager.AllBackground == "Transparent" && manager.GroupItems.Single().IsSelected, "All notes stayed selected while viewing a group.");
+        Check(manager.SelectedDirectoryId == group.Id && manager.DirectoryItems.Single().IsSelected && manager.Cards.Single().Note.Id == note.Id,
+            "The workspace did not open directly into its directory.");
         var box = (TextBox)main.FindName("SidebarSearchBox"); box.Text = "任务一";
         Check(workspace.Search is null, "Typing in the sidebar opened results before Enter.");
         box.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(box), 0, Key.Enter) { RoutedEvent = Keyboard.KeyDownEvent });

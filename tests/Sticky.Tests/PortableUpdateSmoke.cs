@@ -26,15 +26,19 @@ internal static partial class Program
         var note = Example();
         var asset = DocumentCodec.StoreBitmap(SampleBitmap(), store);
         note.Blocks.Add(new NoteBlock { Inlines = [new NoteInline { Kind = "image", AssetId = asset, Width = 160 }] });
-        var group = new NoteGroup { Name = "升级测试分组" }; note.GroupId = group.Id;
-        store.Save(note); store.SaveGroups([group]);
+        var directory = new NoteDirectory { Name = "升级测试目录" };
+        var child = new NoteDirectory { Name = "子目录", ParentId = directory.Id };
+        var tag = new NoteTag(Guid.NewGuid(), "便携更新验证");
+        note.DirectoryId = child.Id;
+        note.SetTags([tag.Id]);
+        store.SaveDirectories([directory, child]); store.SaveTags([tag]); store.Save(note);
         var device = new DeviceState(); device.Windows[note.Id] = new Sticky.Core.WindowState { IsOpen = true };
         store.SaveDeviceState(device);
-        var files = new[] { Path.Combine(data, "notes", note.Id + ".json"), Path.Combine(data, "assets", asset), Path.Combine(data, "groups.json") };
+        var files = new[] { Path.Combine(data, "notes", note.Id + ".json"), Path.Combine(data, "assets", asset), Path.Combine(data, "groups.json"), Path.Combine(data, NoteStore.TagsFile) };
         var hashes = files.ToDictionary(p => p, DurableFiles.Hash);
         var launcherHash = DurableFiles.Hash(Path.Combine(root, "Sticky.exe"));
         void AssertContent()
-        { foreach (var (path, hash) in hashes) Check(DurableFiles.Hash(path) == hash, "Portable smoke changed notes, formatting, group or image bytes."); }
+        { foreach (var (path, hash) in hashes) Check(DurableFiles.Hash(path) == hash, "Portable smoke changed notes, formatting, directories, tags or image bytes."); }
         Process? app = null;
         var launcherStore = new LauncherStore(root);
         try
@@ -49,7 +53,7 @@ internal static partial class Program
             app = FindSmokeRuntime(VersionLayout.Slot(root, launcherStore.ReadState().Active));
             Check(app.MainWindowHandle != 0 && launcherStore.ReadState().Initialized, "Real WPF windows were not initialized and confirmed.");
             AssertContent(); StopSmokeRuntime(app); app = null;
-            Console.WriteLine("PASS Portable stable exe initializes real WPF windows, rich notes, groups and images with external Data");
+            Console.WriteLine("PASS Portable stable exe initializes real WPF windows and preserves notes, nested directories, tags and images with external Data");
 
             var request = new UpdateRequest(root, data, Path.GetFullPath(package), DurableFiles.Hash(package), version, int.MaxValue, 0);
             DurableFiles.Write(launcherStore.QueueFile, request);

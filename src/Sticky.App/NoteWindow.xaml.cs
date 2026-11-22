@@ -50,6 +50,7 @@ public partial class NoteWindow : Window
         _showHeaderOnHover = workspace.EditorPreferences.ShowHeaderOnHover;
         _autoHideHeader = workspace.EditorPreferences.AutoHideHeader;
         InitializeComponent();
+        InitializeTags();
         InitializeContentZoom();
         TitleBox.Text = note.Title;
         ApplyTheme();
@@ -413,8 +414,9 @@ public partial class NoteWindow : Window
             Add("编辑便签    F2", EnterEditMode);
             Add("完成编辑    Esc", FinishEditing);
             Add("修改标题…", RenameTitle);
+            if (!_workspace.IsVaultNote(_note.Id)) Add("编辑标签…", EditTags);
             Add(_note.IsMarkdown ? "转换为富文本…" : "转换为 Markdown…", ConvertNoteFormat);
-            var move = new MenuItem { Header = _workspace.IsVaultNote(_note.Id) ? "保险箱" : "移动到分组 · " + _workspace.GroupName(_note.GroupId) };
+            var move = new MenuItem { Header = _workspace.IsVaultNote(_note.Id) ? "保险箱" : "移动到目录 · " + _workspace.DirectoryPath(_note.DirectoryId) };
             NoteMenus.FillMoveItems(move.Items, _workspace, _note); menu.Items.Add(move);
             var colors = new MenuItem { Header = "便签颜色" };
             foreach (var (label, key) in NotePalette.Choices)
@@ -465,7 +467,7 @@ public partial class NoteWindow : Window
         }
         finally { _modalDepth--; }
     }
-    private void CreateNearbyNote() { if (_workspace.IsVaultNote(_note.Id)) _workspace.CreateVaultNote(this); else _workspace.CreateNote(_note.GroupId, this); }
+    private void CreateNearbyNote() { if (_workspace.IsVaultNote(_note.Id)) _workspace.CreateVaultNote(this); else _workspace.CreateNote(_note.DirectoryId, this); }
     private void NewNote(object sender, RoutedEventArgs e) => CreateNearbyNote();
     private void ManualSave(object sender, RoutedEventArgs e) => SaveNow();
     private void CloseNote(object sender, RoutedEventArgs e) => Close();

@@ -34,7 +34,7 @@ internal static partial class Program
         var workspace = new StickyWorkspace(Path.Combine(_root, "nearby-windows"));
         try
         {
-            var group = workspace.CreateGroup("附近创建")!;
+            var group = workspace.CreateDirectory("附近创建")!;
             workspace.CreateNote(group.Id); Pump(40);
             var source = workspace.Windows[workspace.Notes[0].Id];
             var screens = System.Windows.Forms.Screen.AllScreens;
@@ -52,14 +52,14 @@ internal static partial class Program
                 header.Children.OfType<Button>().First().RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                 Pump(60);
                 var created = workspace.Notes[0]; var child = workspace.Windows[created.Id];
-                Check(created.GroupId == group.Id && child.IsEditing, "Creating nearby lost the group or edit mode.");
+                Check(created.DirectoryId == group.Id && child.IsEditing, "Creating nearby lost the group or edit mode.");
                 AssertNearby(source, child, screen);
                 var before = WindowPixels(child); child.Close(); workspace.OpenNote(created); Pump(60);
                 var after = WindowPixels(workspace.Windows[created.Id]);
                 Check(Math.Abs(before.Left - after.Left) <= 2 && Math.Abs(before.Top - after.Top) <= 2, "Reopening relocated the newly created note.");
                 source.Activate(); source.EnterEditMode();
                 ApplicationCommands.New.Execute(null, source); Pump(60);
-                Check(workspace.Notes[0].GroupId == group.Id, "Ctrl+N lost group membership.");
+                Check(workspace.Notes[0].DirectoryId == group.Id, "Ctrl+N lost group membership.");
                 AssertNearby(source, workspace.Windows[workspace.Notes[0].Id], screen);
             }
         }

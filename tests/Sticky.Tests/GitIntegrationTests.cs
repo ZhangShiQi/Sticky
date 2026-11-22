@@ -22,13 +22,14 @@ internal static class GitIntegrationTests
             Store = new NoteStore(path); Engine = new GitSyncEngine(path, allowLocalRemotes: true, gitProcess: CreateGitProcess());
             Settings = new SyncSettings { Enabled = true, RemoteUrl = remote };
         }
-        public SyncSnapshot Capture() => new() { Notes = Store.LoadNotes().ToDictionary(n => n.Id), Groups = Store.LoadGroups(), Ai = Store.LoadAiCatalog() };
+        public SyncSnapshot Capture() => new() { Notes = Store.LoadNotes().ToDictionary(n => n.Id), Directories = Store.LoadDirectories(), Tags = Store.LoadTags(), Ai = Store.LoadAiCatalog() };
         public Task<SyncResult> Sync(CancellationToken token = default) => Engine.SyncAsync(Settings, Capture(), async (captured, incoming, ct) =>
         {
             if (BeforeApply is not null) incoming = await BeforeApply(captured, incoming, ct);
             var final = SnapshotMerger.Merge(captured, incoming, Capture()).Snapshot;
             foreach (var bytes in final.Assets.Values) Store.AddImage(bytes);
-            Store.SaveGroups(final.Groups);
+            Store.SaveDirectories(final.Directories);
+            Store.SaveTags(final.Tags);
             foreach (var note in final.Notes.Values.OrderBy(n => File.Exists(Path.Combine(Store.NotesDirectory, n.Id + ".json")))) Store.Save(note);
             if (final.Ai is not null) Store.SaveAiCatalog(final.Ai);
             return final;
@@ -73,9 +74,9 @@ internal static class GitIntegrationTests
     public static async Task RoundTrip(string root)
     {
         var f = await Fixture.Create(root);
-        var group = new NoteGroup { Name = "同步的工作分组" }; f.A.Store.SaveGroups([group]);
+        var group = new NoteDirectory { Name = "同步的工作目录" }; f.A.Store.SaveDirectories([group]);
         var image = f.A.Store.AddImage(Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aZioAAAAASUVORK5CYII="));
-        var note = new Note { Title = "中文富文本", GroupId = group.Id, Blocks = [new NoteBlock { Inlines =
+        var note = new Note { Title = "中文富文本", DirectoryId = group.Id, Blocks = [new NoteBlock { Inlines =
             [new NoteInline { Text = "需要同步的正文", Bold = true, Underline = true, Foreground = "#FF285A9C" }, new NoteInline { Kind = "image", AssetId = image, Width = 160 }] }] };
         f.A.Store.Save(note);
         f.A.Store.SaveDeviceState(new DeviceState());
@@ -84,7 +85,7 @@ internal static class GitIntegrationTests
         SyncJson.WriteAtomic(Path.Combine(f.A.Store.Root, "device", "sync-settings.json"), SyncJson.Bytes(new { secret = "DO-NOT-UPLOAD" }), f.A.Store.Root);
         await f.A.Sync(); await f.B.Sync();
         var downloaded = f.B.Store.LoadNotes().Single();
-        Check(downloaded.Title == note.Title && downloaded.GroupId == group.Id && downloaded.Blocks[0].Inlines[0].Underline, "Rich text or group did not sync.");
+        Check(downloaded.Title == note.Title && downloaded.DirectoryId == group.Id && downloaded.Blocks[0].Inlines[0].Underline, "Rich text or group did not sync.");
         Check(File.ReadAllBytes(f.B.Store.GetAssetPath(image)).AsSpan().SequenceEqual(File.ReadAllBytes(f.A.Store.GetAssetPath(image))), "Image bytes changed.");
         var tree = await Fixture.Git(f.Root, ["--git-dir", f.Remote, "ls-tree", "-r", "--name-only", "refs/heads/sticky-data"]);
         Check(!tree.Contains("device/") && !tree.Contains("backups/") && !tree.Contains(".bak") && tree.Split('\n').All(p => p.StartsWith("sticky-v1/", StringComparison.Ordinal)), "Device settings or backups leaked into Git.");
@@ -197,16 +198,131 @@ internal static class GitIntegrationTests
         Check(f.A.Store.LoadNotes().Single().PlainText == "共同版本", "Invalid remote overwrote healthy local content.");
     }
 
-    public static async Task Groups(string root)
+    public static async Task Directories(string root)
     {
         var f = await Fixture.Create(root); var note = await f.Seed();
-        var ga = new NoteGroup { Name = "同名分组" }; var gb = new NoteGroup { Name = "同名分组" };
-        f.A.Store.SaveGroups([ga]); f.B.Store.SaveGroups([gb]);
-        var a = f.A.Store.LoadNotes().Single(); a.GroupId = ga.Id; f.A.Store.Save(a);
-        var b = f.B.Store.LoadNotes().Single(); b.GroupId = gb.Id; f.B.Store.Save(b);
+        var parentA = new NoteDirectory { Name = "项目" }; var parentB = new NoteDirectory { Name = "项目" };
+        var leafA = new NoteDirectory { Name = "草稿", ParentId = parentA.Id }; var leafB = new NoteDirectory { Name = "草稿", ParentId = parentB.Id };
+        var archive = new NoteDirectory { Name = "归档" }; var archivedDrafts = new NoteDirectory { Name = "草稿", ParentId = archive.Id };
+        f.A.Store.SaveDirectories([parentA, leafA, archive, archivedDrafts]); f.B.Store.SaveDirectories([parentB, leafB]);
+        var a = f.A.Store.LoadNotes().Single(); a.DirectoryId = leafA.Id; f.A.Store.Save(a);
+        var b = f.B.Store.LoadNotes().Single(); b.DirectoryId = leafB.Id; f.B.Store.Save(b);
         await f.A.Sync(); await f.B.Sync(); await f.A.Sync();
-        Check(f.A.Store.LoadGroups().Count == 1 && f.A.Store.LoadNotes().Count == 1, "Equal group creation caused duplicates or content conflicts.");
-        Check(f.A.Store.LoadNotes().Single().GroupId == f.A.Store.LoadGroups().Single().Id, "Group membership was not remapped.");
+        var catalog = f.A.Store.LoadDirectories();
+        var tree = new DirectoryHierarchy(catalog);
+        Check(catalog.Count == 4 && f.A.Store.LoadNotes().Count == 1 &&
+            tree.PathLabel(f.A.Store.LoadNotes().Single().DirectoryId) == "项目 › 草稿" && tree.PathLabel(archivedDrafts.Id) == "归档 › 草稿",
+            "Concurrent parent/child creation duplicated a note or merged names across different paths.");
+        var remote = await Fixture.Git(root, ["--git-dir", f.Remote, "show", "refs/heads/sticky-data:sticky-v1/groups.json"]);
+        using (var json = System.Text.Json.JsonDocument.Parse(remote))
+            Check(json.RootElement.GetProperty("schemaVersion").GetInt32() == 2, "Old clients could write over the remote hierarchy.");
+        await f.B.Sync();
+        var projectId = catalog.Single(d => d.Name == "项目").Id;
+        var otherCatalog = f.B.Store.LoadDirectories();
+        catalog.Single(d => d.Id == projectId).ParentId = archive.Id;
+        otherCatalog.Single(d => d.Id == projectId).Name = "生产";
+        f.A.Store.SaveDirectories(catalog); f.B.Store.SaveDirectories(otherCatalog);
+        a = f.A.Store.LoadNotes().Single(); a.DirectoryId = archivedDrafts.Id; a.ModifiedAt = DateTimeOffset.UtcNow; f.A.Store.Save(a);
+        f.B.Edit(note.Id, "另一台设备编辑了内容");
+        await f.A.Sync(); await f.B.Sync(); await f.A.Sync();
+        var combined = f.A.Store.LoadNotes().Single();
+        Check(combined.Id == note.Id && combined.DirectoryId == archivedDrafts.Id && combined.PlainText == "另一台设备编辑了内容",
+            "A move and edit of the same note lost a change or created a duplicate.");
+        Check(new DirectoryHierarchy(f.A.Store.LoadDirectories()).PathLabel(projectId) == "归档 › 生产",
+            "Concurrent move and rename of a directory did not combine.");
+
+        var baseline = f.A.Capture();
+        var local = baseline.Clone(); var upstream = baseline.Clone();
+        upstream.Notes[note.Id].DirectoryId = projectId;
+        local.Notes[note.Id].DirectoryId = archive.Id;
+        var merged = SnapshotMerger.Merge(baseline, local, upstream);
+        Check(merged.Snapshot.Notes.Count == 1 && merged.Snapshot.Notes[note.Id].DirectoryId == projectId && merged.ConflictCount > 0,
+            "Competing moves of the same note should resolve to one directory.");
+
+        var first = new NoteDirectory { Name = "一" }; var second = new NoteDirectory { Name = "二" };
+        baseline = new SyncSnapshot { Directories = [first, second] };
+        local = baseline.Clone(); upstream = baseline.Clone();
+        local.Directories[0].ParentId = second.Id;
+        upstream.Directories[1].ParentId = first.Id;
+        merged = SnapshotMerger.Merge(baseline, local, upstream);
+        NoteStore.ValidateDirectories(merged.Snapshot.Directories);
+        Check(merged.ConflictCount > 0 && merged.Snapshot.Directories.Count(d => d.ParentId is null) == 1,
+            "Combining independent moves formed a cycle or discarded a directory.");
+    }
+
+    public static async Task NoteTags(string root)
+    {
+        var f = await Fixture.Create(root);
+        var note = await f.Seed();
+        var todo = new NoteTag(Guid.NewGuid(), "待办");
+        var important = new NoteTag(Guid.NewGuid(), "重要");
+        var todoOnB = new NoteTag(Guid.NewGuid(), todo.Name);
+        f.A.Store.SaveTags([todo]); f.B.Store.SaveTags([important, todoOnB]);
+        var local = f.A.Edit(note.Id, "来自设备 A 的正文");
+        local.SetTags([todo.Id]); f.A.Store.Save(local);
+        var remote = f.B.Store.LoadNotes().Single();
+        remote.SetTags([important.Id, todoOnB.Id]); f.B.Store.Save(remote);
+        await f.A.Sync(); await f.B.Sync(); await f.A.Sync();
+        var joined = f.A.Store.LoadNotes().Single();
+        var catalog = f.A.Store.LoadTags();
+        Check(joined.PlainText == "来自设备 A 的正文" && joined.Tags.Count == 2 && catalog.Count == 2 &&
+            catalog.Where(t => joined.Tags.Contains(t.Id)).Select(t => t.Name).ToHashSet().SetEquals(["待办", "重要"]),
+            "Independent tag and body edits did not converge to one note with both labels.");
+        var marker = await Fixture.Git(root, ["--git-dir", f.Remote, "show", "refs/heads/sticky-data:sticky-v1/manifest.json"]);
+        Check(marker.Contains("\"schemaVersion\":2"), "Tagged data did not declare the new synchronization version.");
+        Check(!(await f.B.Sync()).Uploaded, "The same-name tag merge did not converge.");
+        f.A.Store.SaveTags(catalog.Select(t => t.Id == important.Id ? t with { Deleted = true } : t).ToList());
+        await f.A.Sync(); await f.B.Sync();
+        Check(f.B.Store.LoadNotes().Single().Tags.Count == 1 && f.B.Store.LoadTags().Single(t => t.Id == important.Id).Deleted,
+            "Deleting a shared tag did not remove its association on the other device.");
+        var baseline = new SyncSnapshot { Notes = new Dictionary<Guid, Note> { [note.Id] = note } };
+        var withTag = baseline.Clone(); withTag.Tags.Add(todo); withTag.Notes[note.Id].SetTags([todo.Id]);
+        var vaultMoved = baseline.Clone(); var movedAt = DateTimeOffset.UtcNow;
+        vaultMoved.Notes[note.Id] = new Note { Id = note.Id, CreatedAt = movedAt, ModifiedAt = movedAt, DeletedAt = movedAt };
+        Check(SnapshotMerger.Merge(baseline, withTag, vaultMoved).Snapshot.Notes[note.Id].Tags.Count == 0,
+            "A concurrent tag edit reattached an ordinary tag to a redacted vault tombstone.");
+    }
+
+    public static async Task DirectoryTrash(string root)
+    {
+        var f = await Fixture.Create(root);
+        var project = new NoteDirectory { Name = "项目" };
+        var folder = new NoteDirectory { Name = "资料", ParentId = project.Id };
+        var child = new NoteDirectory { Name = "访谈", ParentId = folder.Id };
+        var empty = new NoteDirectory { Name = "空目录", ParentId = project.Id };
+        var race = new NoteDirectory { Name = "待同步目录" };
+        f.A.Store.SaveDirectories([project, folder, child, empty, race]);
+        var note = new Note { Title = "同步中的访谈", DirectoryId = child.Id };
+        f.A.Store.Save(note);
+        await f.A.Sync(); await f.B.Sync();
+
+        folder.State = DirectoryState.Trashed;
+        empty.State = DirectoryState.Removed;
+        f.A.Store.SaveDirectories([project, folder, child, empty, race]);
+        await f.A.Sync(); await f.B.Sync();
+        var downloaded = f.B.Store.LoadDirectories();
+        var tree = new DirectoryHierarchy(downloaded);
+        Check(tree.TrashRoots().Single().Id == folder.Id && downloaded.Single(d => d.Id == empty.Id).State == DirectoryState.Removed &&
+            !tree.IsActive(child.Id) && SyncJson.Equal(f.B.Store.LoadNotes().Single(), note),
+            "Sync lost the discarded subtree, restored an empty deletion, or changed its note records.");
+
+        downloaded.Single(d => d.Id == folder.Id).State = DirectoryState.Active;
+        f.B.Store.SaveDirectories(downloaded);
+        await f.B.Sync(); await f.A.Sync();
+        var restored = new DirectoryHierarchy(f.A.Store.LoadDirectories());
+        Check(restored.IsActive(child.Id) && restored.PathLabel(child.Id) == "项目 › 资料 › 访谈" && !restored.TrashRoots().Any(),
+            "The directory did not restore to its original location on the other device.");
+
+        var onA = f.A.Store.LoadDirectories();
+        onA.Single(d => d.Id == race.Id).State = DirectoryState.Removed;
+        f.A.Store.SaveDirectories(onA);
+        var late = new Note { Title = "未同步的内容", DirectoryId = race.Id };
+        f.B.Store.Save(late);
+        await f.A.Sync(); await f.B.Sync(); await f.A.Sync();
+        var merged = f.A.Store.LoadDirectories();
+        Check(new DirectoryHierarchy(merged).TrashRoots().Single().Id == race.Id &&
+            f.A.Store.LoadNotes().Single(n => n.Id == late.Id).DirectoryId == race.Id && !(await f.B.Sync()).Uploaded,
+            "Concurrent content was lost, escaped its deleted location, or failed to converge.");
     }
 
     public static async Task AiCatalogSync(string root)

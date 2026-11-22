@@ -16,6 +16,8 @@ public sealed class GitSyncEngine
     private readonly GitProcess _git;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private static readonly byte[] Marker = Encoding.UTF8.GetBytes("{\"format\":\"Sticky\",\"schemaVersion\":1}\n");
+    private static readonly byte[] TaggedMarker = Encoding.UTF8.GetBytes("{\"format\":\"Sticky\",\"schemaVersion\":2}\n");
+    private const string TagsPath = Prefix + NoteStore.TagsFile;
 
     public GitSyncEngine(string dataRoot, bool allowLocalRemotes = false, GitProcess? gitProcess = null)
     {
@@ -161,7 +163,7 @@ public sealed class GitSyncEngine
 
     private static void ValidatePath(string path)
     {
-        if (path is Prefix + "manifest.json" or Prefix + "groups.json" or AiFile) return;
+        if (path is Prefix + "manifest.json" or Prefix + "groups.json" or AiFile or TagsPath) return;
         if (Regex.IsMatch(path, @"^sticky-v1/notes/[a-fA-F0-9-]{36}\.json$") || Regex.IsMatch(path, @"^sticky-v1/assets/[a-f0-9]{64}\.png$")) return;
         throw new InvalidDataException("远端同步目录包含不支持的文件：" + path);
     }
@@ -174,13 +176,14 @@ public sealed class GitSyncEngine
         using (var json = System.Text.Json.JsonDocument.Parse(marker))
         {
             if (!json.RootElement.TryGetProperty("format", out var format) || format.GetString() != "Sticky"
-                || !json.RootElement.TryGetProperty("schemaVersion", out var version) || version.GetInt32() != 1)
+                || !json.RootElement.TryGetProperty("schemaVersion", out var version) || version.GetInt32() is not (1 or 2))
                 throw new InvalidDataException("远端同步格式不受支持，请升级应用。");
         }
         foreach (var (path, bytes) in files)
         {
             if (path == AiFile) snapshot.Ai = NoteStore.ParseAiCatalog(bytes);
-            else if (path == Prefix + "groups.json") snapshot.Groups = NoteStore.ParseGroups(bytes);
+            else if (path == TagsPath) snapshot.Tags = NoteStore.ParseTags(bytes);
+            else if (path == Prefix + "groups.json") snapshot.Directories = NoteStore.ParseDirectories(bytes);
             else if (path.StartsWith(Prefix + "notes/", StringComparison.Ordinal))
             {
                 if (!Guid.TryParse(Path.GetFileNameWithoutExtension(path), out var id)) throw new InvalidDataException("远端便签标识无效。");
@@ -199,14 +202,18 @@ public sealed class GitSyncEngine
 
     public static void ValidateSnapshot(SyncSnapshot snapshot, bool checkAssets = true)
     {
-        if (snapshot.Notes is null || snapshot.Groups is null) throw new InvalidDataException("同步快照无效。");
+        if (snapshot.Notes is null || snapshot.Directories is null) throw new InvalidDataException("同步快照无效。");
         if (snapshot.Ai is not null) _ = NoteStore.ParseAiCatalog(SyncJson.Bytes(snapshot.Ai));
-        _ = NoteStore.ParseGroups(SyncJson.Bytes(new GroupCatalog { Groups = snapshot.Groups }));
+        NoteStore.ValidateDirectories(snapshot.Directories);
+        NoteStore.ValidateTags(snapshot.Tags);
+        var tagIds = snapshot.Tags.Select(t => t.Id).ToHashSet();
+        var directoryIds = snapshot.Directories.Where(d => d.State != DirectoryState.Removed).Select(d => d.Id).ToHashSet();
         foreach (var (id, note) in snapshot.Notes)
         {
             if (note is null) throw new InvalidDataException("同步便签为空。");
             _ = NoteStore.ParseNote(SyncJson.Bytes(note), id);
-            if (note.GroupId is { } group && !snapshot.Groups.Any(g => g.Id == group)) throw new InvalidDataException("同步快照缺少便签所属的分组。");
+            if (note.Tags.Any(tag => !tagIds.Contains(tag))) throw new InvalidDataException("同步快照缺少便签引用的标签。");
+            if (note.DirectoryId is { } directory && !directoryIds.Contains(directory)) throw new InvalidDataException("同步快照缺少便签所属的目录。");
             if (checkAssets)
                 foreach (var asset in note.GetImageIds())
                     if (!snapshot.Assets.TryGetValue(asset, out var bytes) || SyncJson.Hash(bytes) + ".png" != asset) throw new InvalidDataException("同步快照缺少有效图片：" + asset);
@@ -231,9 +238,10 @@ public sealed class GitSyncEngine
     {
         var files = new Dictionary<string, byte[]>(StringComparer.Ordinal)
         {
-            [Prefix + "manifest.json"] = Marker,
-            [Prefix + "groups.json"] = SyncJson.Bytes(new GroupCatalog { Groups = snapshot.Groups.OrderBy(g => g.Id).ToList() })
+            [Prefix + "manifest.json"] = snapshot.Tags is { Count: > 0 } ? TaggedMarker : Marker,
+            [Prefix + "groups.json"] = NoteStore.SerializeDirectories(snapshot.Directories.OrderBy(directory => directory.Id).ToList())
         };
+        if (snapshot.Tags is { Count: > 0 }) files[TagsPath] = NoteStore.SerializeTags(snapshot.Tags);
         foreach (var note in snapshot.Notes.Values) files[Prefix + "notes/" + note.Id + ".json"] = SyncJson.Bytes(note);
         if (snapshot.Ai is not null) files[AiFile] = SyncJson.Bytes(snapshot.Ai);
         foreach (var id in snapshot.Notes.Values.SelectMany(n => n.GetImageIds()).Distinct()) files[Prefix + "assets/" + id] = snapshot.Assets[id];

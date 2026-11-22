@@ -198,7 +198,8 @@ public partial class VaultWindow : Window
             if (!Vault.IsUnlocked || _workspace.VaultViewsHidden || !SaveCurrent()) return;
             var note = Vault.Notes.Single(n => n.Id == id); var oldId = note.Id;
             foreach (var asset in note.GetImageIds().Distinct()) _workspace.Store.AddImage(Vault.ReadImage(asset));
-            note.Id = Guid.NewGuid(); note.GroupId = null; note.ConflictOf = null; note.ModifiedAt = DateTimeOffset.UtcNow;
+            note.Id = Guid.NewGuid(); note.DirectoryId = _workspace.EnsureInboxDirectory(); note.ConflictOf = null; note.ModifiedAt = DateTimeOffset.UtcNow;
+            note.SetTags([]);
             _workspace.Store.Save(note); _workspace.Notes.Add(note); _workspace.NotifyChanged();
             if (_workspace.Windows.TryGetValue(oldId, out var editor)) { editor.Close(); editor.ClearPrivateContent(); }
             Vault.Remove(oldId); RefreshNotes();

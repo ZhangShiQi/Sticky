@@ -37,7 +37,13 @@ public sealed class HistoryCheckpoint
 public sealed record HistoryRow(HistoryEvent First, HistoryEvent Last, int Count)
 {
     public long Sequence => Last.Sequence;
-    public string Heading => Count > 1 ? $"{Last.Summary} · {Count} 次保存" : Last.Summary;
+    public string Heading => Count > 1 ? $"{Summary} · {Count} 次保存" : Summary;
+    public string Summary => Last.Kind switch
+    {
+        "groupsChanged" => HistoryDescriptions.DirectoryTerms(Last.Summary),
+        "noteMoved" when Last.Summary.StartsWith("移动分组 · ", StringComparison.Ordinal) => "移动目录 · " + Last.Summary[7..],
+        _ => Last.Summary
+    };
     public string Description => $"{First.Time.ToLocalTime():MM-dd HH:mm:ss}" + (Count > 1 ? $" — {Last.Time.ToLocalTime():HH:mm:ss}" : "")
         + " · " + HistoryDescriptions.SourceLabel(Last.Source);
 }
@@ -45,7 +51,8 @@ public sealed class HistoryFrame
 {
     public long Sequence { get; init; }
     public Dictionary<Guid, Note> Notes { get; init; } = [];
-    public List<NoteGroup> Groups { get; init; } = [];
+    public List<NoteDirectory> Directories { get; init; } = [];
+    public List<NoteTag> Tags { get; init; } = [];
     public DeviceState Layout { get; init; } = new();
 }
 
@@ -53,6 +60,16 @@ public static class HistoryDescriptions
 {
     public static string SourceLabel(string source) => source switch
     { "sync" => "同步传入", "import" => "备份导入", "restore" => "历史恢复", "baseline" => "初始状态", "recovery" => "数据恢复", "external" => "外部或旧版变更", _ => "本机操作" };
+
+    public static IEnumerable<string> DisplayChanges(HistoryEvent entry) => entry.Changes.Select(text => entry.Kind switch
+    {
+        "groupsChanged" => DirectoryTerms(text),
+        "noteMoved" when text == "移动到其他分组" => "移动到其他目录",
+        _ => text
+    });
+
+    internal static string DirectoryTerms(string text) => text
+        .Replace("新建分组：", "新建目录：").Replace("重命名分组：", "重命名目录：").Replace("移除分组：", "移除目录：");
 
     internal static HistoryEvent Describe(string target, byte[]? before, byte[] after, HistoryContext context)
     {
@@ -70,9 +87,10 @@ public static class HistoryDescriptions
             {
                 if (prior.Title != next.Title) entry.Changes.Add($"标题：{Short(prior.DisplayTitle)} → {Short(next.DisplayTitle)}");
                 if (prior.Color != next.Color) entry.Changes.Add($"颜色：{prior.Color} → {next.Color}");
-                if (prior.GroupId != next.GroupId) { entry.Kind = "noteMoved"; entry.Changes.Add("移动到其他分组"); }
+                if (prior.DirectoryId != next.DirectoryId) { entry.Kind = "noteMoved"; entry.Changes.Add("移动到其他目录"); }
                 if (prior.DeletedAt is null && next.DeletedAt is not null) { entry.Kind = "noteDeleted"; entry.Changes.Add("移入回收站"); }
                 if (prior.DeletedAt is not null && next.DeletedAt is null) { entry.Kind = "noteRestored"; entry.Changes.Add("从回收站恢复"); }
+                if (!prior.Tags.SequenceEqual(next.Tags)) entry.Changes.Add("修改便签标签");
                 if (prior.IsMarkdown != next.IsMarkdown)
                 {
                     if (entry.Kind == "noteEdited") entry.Kind = "noteFormatConverted";
@@ -89,21 +107,48 @@ public static class HistoryDescriptions
                 }
             }
             if (context.Source == "restore") { entry.Kind = "historyRestored"; entry.Changes.Insert(0, context.Reason ?? "恢复历史版本"); }
-            entry.Summary = (entry.Kind switch { "noteCreated" => "新建", "noteDeleted" => "删除", "noteRestored" => "恢复", "noteMoved" => "移动分组", "historyRestored" => "恢复历史", "noteFormatConverted" => "转换格式", _ => "修改" }) + " · " + entry.NoteTitle;
+            entry.Summary = (entry.Kind switch { "noteCreated" => "新建", "noteDeleted" => "删除", "noteRestored" => "恢复", "noteMoved" => "移动目录", "historyRestored" => "恢复历史", "noteFormatConverted" => "转换格式", _ => "修改" }) + " · " + entry.NoteTitle;
         }
         else if (target == "groups.json")
         {
-            var old = before is null ? [] : NoteStore.ParseGroups(before);
-            var next = NoteStore.ParseGroups(after);
+            var old = before is null ? [] : NoteStore.ParseDirectories(before);
+            var next = NoteStore.ParseDirectories(after);
+            var previousTree = new DirectoryHierarchy(old);
+            var nextTree = new DirectoryHierarchy(next);
             entry.Kind = "groupsChanged";
-            foreach (var group in next)
+            foreach (var directory in next)
             {
-                var prior = old.FirstOrDefault(g => g.Id == group.Id);
-                if (prior is null) entry.Changes.Add("新建分组：" + group.Name);
-                else if (prior.Name != group.Name) entry.Changes.Add($"重命名分组：{prior.Name} → {group.Name}");
+                var prior = old.FirstOrDefault(d => d.Id == directory.Id);
+                var path = nextTree.PathLabel(directory.Id);
+                if (prior is null) entry.Changes.Add("新建目录：" + path);
+                else if (prior.State != directory.State)
+                {
+                    var action = directory.State switch
+                    {
+                        DirectoryState.Trashed => "目录移入回收站：",
+                        DirectoryState.Removed => "删除空目录：",
+                        _ => "恢复目录："
+                    };
+                    entry.Changes.Add(action + path);
+                }
+                else if (prior.ParentId != directory.ParentId) entry.Changes.Add($"移动目录：{previousTree.PathLabel(prior.Id)} → {path}");
+                else if (prior.Name != directory.Name) entry.Changes.Add($"重命名目录：{previousTree.PathLabel(prior.Id)} → {path}");
             }
-            foreach (var removed in old.Where(g => !next.Any(n => n.Id == g.Id))) entry.Changes.Add("移除分组：" + removed.Name);
+            foreach (var removed in old.Where(d => !next.Any(n => n.Id == d.Id))) entry.Changes.Add("移除目录：" + previousTree.PathLabel(removed.Id));
             entry.Summary = string.Join("；", entry.Changes);
+        }
+        else if (target == NoteStore.TagsFile)
+        {
+            var previous = (before is null ? [] : NoteStore.ParseTags(before)).ToDictionary(t => t.Id);
+            entry.Kind = "tagsChanged";
+            foreach (var tag in NoteStore.ParseTags(after))
+            {
+                var old = previous.GetValueOrDefault(tag.Id);
+                if (old is null && !tag.Deleted) entry.Changes.Add("新建标签：" + tag.Name);
+                else if (old is { Deleted: false } && tag.Deleted) entry.Changes.Add("删除标签：" + tag.Name);
+                else if (old is not null && old.Name != tag.Name && !tag.Deleted) entry.Changes.Add($"重命名标签：{old.Name} → {tag.Name}");
+            }
+            entry.Summary = entry.Changes.Count == 0 ? "更新标签列表" : string.Join("；", entry.Changes);
         }
         else
         {

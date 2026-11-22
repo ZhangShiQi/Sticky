@@ -31,10 +31,10 @@ internal static partial class Program
     private static void ManagerViews()
     {
         var workspace = new StickyWorkspace(Path.Combine(_root, "manager-views"));
-        var group = new NoteGroup { Name = "工作" }; workspace.Groups.Add(group); workspace.Store.SaveGroups(workspace.Groups);
-        foreach (var (title, color, grouped) in new[] { ("周末出行", "sage", false), ("采购清单", "amber", true), ("忽然想到", "lavender", false), ("阅读笔记", "sky", true) })
+        var group = new NoteDirectory { Name = "工作" }; workspace.Directories.Add(group); workspace.Store.SaveDirectories(workspace.Directories);
+        foreach (var (title, color) in new[] { ("周末出行", "sage"), ("采购清单", "amber"), ("忽然想到", "lavender"), ("阅读笔记", "sky") })
         {
-            var note = new Note { Title = title, Color = color, GroupId = grouped ? group.Id : null, Blocks = [new NoteBlock { Inlines = [new NoteInline { Text = title + "\n这里是便签的正文预览。" }] }] };
+            var note = new Note { Title = title, Color = color, DirectoryId = group.Id, Blocks = [new NoteBlock { Inlines = [new NoteInline { Text = title + "\n这里是便签的正文预览。" }] }] };
             workspace.Store.Save(note); workspace.Notes.Add(note);
         }
         var main = new MainWindow(workspace); main.Show(); Pump(40); main.UpdateLayout();
@@ -53,15 +53,15 @@ internal static partial class Program
             Check(workspace.Windows.ContainsKey(selected.Note.Id), "A compact title did not open its own note."); workspace.Windows[selected.Note.Id].Close(); Pump(20);
             list.UpdateLayout(); container = (ListBoxItem)list.ItemContainerGenerator.ContainerFromIndex(0); label = ManagerVisuals<Button>(container).Single(); selected = (NoteCard)label.DataContext;
             var menu = label.ContextMenu!; menu.PlacementTarget = label; menu.IsOpen = true; Pump(20);
-            Check(menu.Items.OfType<MenuItem>().Any(i => i.Header?.ToString() == "移动到分组"), "Compact mode lost the move operation.");
+            Check(menu.Items.OfType<MenuItem>().Any(i => i.Header?.ToString() == "移动到目录"), "Compact mode lost the move operation.");
             var delete = menu.Items.OfType<MenuItem>().Single(i => i.Header?.ToString() == "移入回收站"); menu.IsOpen = false; delete.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent)); Pump(30);
             Check(selected.Note.DeletedAt is not null && vm.Cards.Count == 3, "Deleting a title did not remove the correct note.");
             vm.ShowDeleted = true; Pump(30); list.UpdateLayout();
             Check(vm.Cards.Count == 1 && vm.IsTitleView, "Recycle-bin filtering changed the chosen view.");
             container = (ListBoxItem)list.ItemContainerGenerator.ContainerFromIndex(0); label = ManagerVisuals<Button>(container).Single(); label.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); Pump(30);
             Check(selected.Note.DeletedAt is null && vm.Cards.Count == 0, "A compact recycle-bin title did not restore the correct note.");
-            vm.SelectGroup(group.Id); Check(vm.Cards.All(c => c.Note.GroupId == group.Id) && vm.IsTitleView, "Group filtering did not preserve title mode.");
-            workspace.RenameGroup(group, "工作记录"); Check(vm.GroupItems.Single().Label.StartsWith("工作记录") && vm.Cards.All(c => c.GroupName == "工作记录"), "Incremental refresh lost a group rename.");
+            vm.SelectDirectory(group.Id); Check(vm.Cards.All(c => c.Note.DirectoryId == group.Id) && vm.IsTitleView, "Group filtering did not preserve title mode.");
+            workspace.RenameDirectory(group, "工作记录"); Check(vm.DirectoryItems.Single().Label.StartsWith("工作记录") && vm.Cards.All(c => c.DirectoryPath == "工作记录"), "Incremental refresh lost a group rename.");
         }
         finally { workspace.PrepareExit(); }
         var restarted = new StickyWorkspace(workspace.Store.Root);
@@ -82,11 +82,11 @@ internal static partial class Program
     private static void ManagerScale()
     {
         var workspace = new StickyWorkspace(Path.Combine(_root, "manager-scale"));
-        for (var g = 0; g < 100; g++) workspace.Groups.Add(new NoteGroup { Name = $"分组 {g:000}" });
+        for (var g = 0; g < 100; g++) workspace.Directories.Add(new NoteDirectory { Name = $"目录 {g:000}" });
         var start = DateTimeOffset.UtcNow;
-        for (var i = 0; i < 5000; i++) workspace.Notes.Add(new Note { Title = $"便签 {i:0000}", GroupId = workspace.Groups[i % 100].Id, ModifiedAt = start.AddSeconds(-i),
+        for (var i = 0; i < 5050; i++) workspace.Notes.Add(new Note { Title = $"便签 {i:0000}", DirectoryId = workspace.Directories[i < 5000 ? 0 : 1].Id, ModifiedAt = start.AddSeconds(-i),
             Blocks = [new NoteBlock { Inlines = [new NoteInline { Text = "这是便签正文，用于验证只渲染当前屏幕内的卡片。" }] }] });
-        var huge = workspace.Notes[^1]; huge.Title = ""; huge.Blocks[0].Inlines[0].Text = new string('字', 2_000_000);
+        var huge = workspace.Notes[4999]; huge.Title = ""; huge.Blocks[0].Inlines[0].Text = new string('字', 2_000_000);
         var timer = Stopwatch.StartNew(); var main = new MainWindow(workspace); main.Show(); Pump(30); main.UpdateLayout(); var previewMs = timer.Elapsed.TotalMilliseconds;
         var vm = (MainViewModel)main.DataContext; var list = (ListBox)main.FindName("NotesList");
         try
@@ -94,7 +94,8 @@ internal static partial class Program
             var panel = ManagerVisuals<VirtualizingWrapPanel>(main).Single();
             var previewContainers = ManagerVisuals<ListBoxItem>(list).Count();
             Check(vm.Cards.Count == 5000 && previewContainers is > 0 and < 100 && list.ItemContainerGenerator.ContainerFromIndex(4999) is null, "Preview view realized thousands of cards instead of the viewport.");
-            Check(vm.GroupItems.All(g => g.Count == 50), "One-pass group counts were incorrect.");
+            Check(vm.DirectoryItems[0].Count == 5000 && vm.DirectoryItems[1].Count == 50 && vm.DirectoryItems.Skip(2).All(d => d.Count == 0),
+                "One-pass directory counts were incorrect.");
             var first = vm.Cards[0]; var resets = 0; var events = 0;
             vm.Cards.CollectionChanged += (_, e) => { events++; if (e.Action == NotifyCollectionChangedAction.Reset) resets++; };
             var refreshTimes = new List<double>();
@@ -120,10 +121,10 @@ internal static partial class Program
             Check(panel.ExtentHeight > panel.ViewportHeight && ManagerVisuals<ListBoxItem>(list).Count() < 150, "Resizing disabled virtualization.");
             huge.ModifiedAt = start.AddDays(1); vm.Refresh(); Pump(30); main.UpdateLayout();
             Check(vm.Cards[0].Note.Id == huge.Id && resets == 1 && events == 1, "Reordering did not use one batched reset or targeted the wrong note.");
-            vm.SelectGroup(workspace.Groups[0].Id); Pump(20); main.UpdateLayout(); Check(vm.Cards.Count == 50, "Group filtering failed after recycling and reordering.");
-            vm.SelectGroup(null); Pump(20); main.UpdateLayout();
+            vm.SelectDirectory(workspace.Directories[1].Id); Pump(20); main.UpdateLayout(); Check(vm.Cards.Count == 50, "Directory filtering failed after recycling and reordering.");
+            vm.SelectDirectory(workspace.Directories[0].Id); Pump(20); main.UpdateLayout();
             list.ScrollIntoView(vm.Cards[^1]); Pump(30); main.UpdateLayout(); Check(list.ItemContainerGenerator.ContainerFromIndex(4999) is not null, "ScrollIntoView could not realize an offscreen note.");
-            File.WriteAllText(Path.Combine(_root, "manager-performance.json"), JsonSerializer.Serialize(new { notes = 5000, groups = 100, previewMs, previewContainers,
+            File.WriteAllText(Path.Combine(_root, "manager-performance.json"), JsonSerializer.Serialize(new { notes = 5050, directories = 100, visibleDirectoryNotes = 5000, previewMs, previewContainers,
                 previewEndMs, titlesMs, titleContainers, refreshMedianMs = refreshTimes.Order().ElementAt(refreshTimes.Count / 2) }, new JsonSerializerOptions { WriteIndented = true }));
         }
         finally { workspace.PrepareExit(); }

@@ -144,7 +144,7 @@ public partial class SettingsWindow : Window
         if (!_workspace.SaveAllNotes()) return;
         var dialog = new SaveFileDialog { Filter = "Sticky 备份 (*.zip)|*.zip", FileName = $"Sticky-{DateTime.Now:yyyyMMdd-HHmm}.zip" };
         if (dialog.ShowDialog(this) != true) return;
-        try { BackupService.Export(_workspace.Store, dialog.FileName); DataStatus.Text = "备份已导出，包含普通便签、分组、回收站、图片及加密保险箱（如有）。"; }
+        try { BackupService.Export(_workspace.Store, dialog.FileName); DataStatus.Text = "备份已导出，包含普通便签、目录、回收站、图片及加密保险箱（如有）。"; }
         catch (Exception ex) { StickyWorkspace.ShowError("导出失败", ex); }
     }
     private void ImportBackup(object sender, RoutedEventArgs e)
@@ -154,7 +154,8 @@ public partial class SettingsWindow : Window
         try
         {
             var notes = BackupService.Import(_workspace.Store, dialog.FileName);
-            _workspace.Groups.Clear(); _workspace.Groups.AddRange(_workspace.Store.LoadGroups());
+            _workspace.Directories.Clear(); _workspace.Directories.AddRange(_workspace.Store.LoadDirectories());
+            _workspace.Tags.Clear(); _workspace.Tags.AddRange(_workspace.Store.LoadTags());
             _workspace.Notes.AddRange(notes); _workspace.NotifyChanged();
             DataStatus.Text = $"已导入 {notes.Count} 张便签，相同 ID 的便签作为新副本保留。";
             using var archive = System.IO.Compression.ZipFile.OpenRead(dialog.FileName);

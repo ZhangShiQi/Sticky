@@ -19,7 +19,7 @@
       <TextBlock Text="默认 sticky-data，首次同步会创建此分支。其他设备请填写完全相同的分支。" FontSize="12" Foreground="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,7,0,18" />
     </StackPanel>
     <Border Grid.Row="2" Background="#EEF0E9" CornerRadius="8" Padding="15" Margin="0,0,0,18">
-      <TextBlock Text="同步通过 Git 和 Git Credential Manager 完成，便携版已包含这些组件。保存配置后，点击「立即同步」完成首次登录，凭据由系统保管。&#10;&#10;便签、分组、图片和回收站会上传；窗口位置、登录凭据、设备设置不会上传。断网不影响本地编辑；冲突时保留双方版本。" TextWrapping="Wrap" Foreground="#586251" FontSize="12" LineHeight="20" />
+      <TextBlock Text="同步通过 Git 和 Git Credential Manager 完成，便携版已包含这些组件。保存配置后，点击「立即同步」完成首次登录，凭据由系统保管。&#10;&#10;便签、目录、图片和回收站会上传；窗口位置、登录凭据、设备设置不会上传。断网不影响本地编辑；冲突时保留双方版本。" TextWrapping="Wrap" Foreground="#586251" FontSize="12" LineHeight="20" />
     </Border>
     <ScrollViewer Grid.Row="3" VerticalScrollBarVisibility="Auto">
       <StackPanel>

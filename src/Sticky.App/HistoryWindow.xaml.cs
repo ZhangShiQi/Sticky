@@ -24,7 +24,7 @@ public partial class HistoryWindow : Window
     private List<HistoryNoteChoice> _choices = [];
     private HistoryFrame? _frame;
     private Note? _snapshot;
-    private (Note Note, IReadOnlyList<NoteGroup> Groups, long Sequence)? _beforeConversion;
+    private (Note Note, IReadOnlyList<NoteDirectory> Directories, long Sequence)? _beforeConversion;
     private Guid? _detailNote;
     private bool _loading = true, _playing, _initialized;
     public int FrameIndex => (int)ProgressSlider.Value;
@@ -119,12 +119,13 @@ public partial class HistoryWindow : Window
                     if (entry.Target.StartsWith("notes/", StringComparison.Ordinal) && entry.NoteTitle.Length > 0) names[id] = entry.NoteTitle;
                 }
             foreach (var choice in _choices) choice.PropertyChanged -= SelectionChanged;
+            var directories = new DirectoryHierarchy(last.Directories);
             _choices = names.OrderBy(p => p.Value).ThenBy(p => p.Key).Select(p =>
             {
                 notes.TryGetValue(p.Key, out var note);
-                var group = note?.GroupId is { } g ? last.Groups.FirstOrDefault(n => n.Id == g)?.Name ?? "未分组" : "未分组";
-                var state = note is null ? " · 已移除" : note.DeletedAt is not null ? " · 回收站" : "";
-                return new HistoryNoteChoice(p.Key, p.Value, group + state, NotePalette.Accent(note?.Color ?? "yellow"), !_initialized || selected.Contains(p.Key));
+                var path = directories.PathLabel(note?.DirectoryId);
+                var state = note is null ? " · 已移除" : note.DeletedAt is not null || !directories.IsActive(note.DirectoryId) ? " · 回收站" : "";
+                return new HistoryNoteChoice(p.Key, p.Value, path + state, NotePalette.Accent(note?.Color ?? "yellow"), !_initialized || selected.Contains(p.Key));
             }).ToList();
             foreach (var choice in _choices) choice.PropertyChanged += SelectionChanged;
             _timeline = timeline; _frame = null;
@@ -136,7 +137,7 @@ public partial class HistoryWindow : Window
             ProgressSlider.Maximum = _rows.Count - 1;
             ProgressSlider.Value = wasAtEnd ? _rows.Count - 1 : Math.Max(0, _rows.FindLastIndex(r => r.Sequence <= sequence));
             _loading = false; _initialized = true;
-            EventCount.Text = $"{_rows.Count - 1} 个变化批次 · 全部便签";
+            EventCount.Text = $"{_rows.Count - 1} 个变化批次 · 全局历史";
             ApplySelection();
             StatusText.Text = "本地历史 · 回放不会修改当前便签 · 窗口位置、大小、置顶及打开关闭不在时间轴中展示";
             if (timeline.Events.Count == 0) StatusText.Text += " · 从此刻开始积累变化";
@@ -183,6 +184,7 @@ public partial class HistoryWindow : Window
     {
         SnapshotPanel.Children.Clear();
         var selected = _choices.Where(c => c.IsSelected).ToList();
+        var directories = new DirectoryHierarchy(frame.Directories);
         PreviewEmpty.Visibility = selected.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         foreach (var choice in selected)
         {
@@ -200,13 +202,14 @@ public partial class HistoryWindow : Window
                 catch (Exception ex) { _snapshot = null; RestoreCopyButton.IsEnabled = RestoreCurrentButton.IsEnabled = false; StatusText.Text = "无法读取该版本：" + ex.Message; }
             };
             DockPanel.SetDock(header, Dock.Top); content.Children.Add(header);
-            var group = note?.GroupId is { } id ? frame.Groups.FirstOrDefault(g => g.Id == id)?.Name ?? "未分组" : "未分组";
-            var footer = new TextBlock { Text = note is null ? "此时尚未创建，或已被移除" : group + (note.DeletedAt is not null ? " · 已移入回收站" : ""),
+            var path = directories.PathLabel(note?.DirectoryId);
+            var inTrash = note?.DeletedAt is not null || !directories.IsActive(note?.DirectoryId);
+            var footer = new TextBlock { Text = note is null ? "此时尚未创建，或已被移除" : path + (inTrash ? " · 已移入回收站" : ""),
                 Foreground = Paint("#BAC2B5"), FontSize = 11, Margin = new Thickness(10, 6, 10, 10), TextWrapping = TextWrapping.Wrap };
             DockPanel.SetDock(footer, Dock.Bottom); content.Children.Add(footer);
             var body = new RichTextBox { Document = note is null ? Preview(null) : DocumentCodec.Decode(Excerpt(note.GetBodyBlocks()), _workspace.Store, darkTheme: true, _workspace.EditorPreferences, note.IsMarkdown),
                 IsReadOnly = true, IsDocumentEnabled = false, AllowDrop = false, IsHitTestVisible = false, Background = Brushes.Transparent, BorderThickness = new Thickness(0),
-                Padding = new Thickness(8), Height = 170, VerticalScrollBarVisibility = ScrollBarVisibility.Hidden, Opacity = note?.DeletedAt is not null ? 0.6 : 1 };
+                Padding = new Thickness(8), Height = 170, VerticalScrollBarVisibility = ScrollBarVisibility.Hidden, Opacity = inTrash ? 0.6 : 1 };
             content.Children.Add(body); card.Child = content; SnapshotPanel.Children.Add(card);
             if (_playing && active && SystemParameters.ClientAreaAnimation)
                 card.BeginAnimation(OpacityProperty, new DoubleAnimation(0.65, 1, TimeSpan.FromMilliseconds(200)));
@@ -273,20 +276,24 @@ public partial class HistoryWindow : Window
         BeforeLabel.Text = previous is null ? "修改前" : "修改前 · " + previous.FormatLabel;
         AfterLabel.Text = current is null ? "该版本" : "该版本 · " + current.FormatLabel;
         var changes = previous is not null && current is not null ? HistoryDescriptions.TextDifference(previous.PlainText, current.PlainText) : default;
-        ChangesText.Text = row.Heading + "\n" + row.Description + "\n\n" + string.Join("\n\n", row.First.Changes.Concat(row.Last.Changes).Distinct())
+        ChangesText.Text = row.Heading + "\n" + row.Description + "\n\n" + string.Join("\n\n", HistoryDescriptions.DisplayChanges(row.First).Concat(HistoryDescriptions.DisplayChanges(row.Last)).Distinct())
             + (changes.Removed?.Length > 0 ? "\n\n删除文字：\n" + changes.Removed : "") + (changes.Added?.Length > 0 ? "\n\n新增文字：\n" + changes.Added : "")
             + (row.Last.Reason is { } reason ? "\n\n" + reason : "");
         if (previous is not null && current is not null)
         {
-            string GroupLabel(HistoryFrame f, Guid? group) => group is { } key ? f.Groups.FirstOrDefault(g => g.Id == key)?.Name ?? "未分组" : "未分组";
-            if (GroupLabel(before, previous.GroupId) != GroupLabel(_frame, current.GroupId))
-                ChangesText.Text += "\n\n分组：" + GroupLabel(before, previous.GroupId) + " → " + GroupLabel(_frame, current.GroupId);
+            static string DirectoryLabel(HistoryFrame f, Guid? id) => new DirectoryHierarchy(f.Directories).PathLabel(id);
+            if (DirectoryLabel(before, previous.DirectoryId) != DirectoryLabel(_frame, current.DirectoryId))
+                ChangesText.Text += "\n\n目录：" + DirectoryLabel(before, previous.DirectoryId) + " → " + DirectoryLabel(_frame, current.DirectoryId);
+            static string TagLabels(HistoryFrame frame, Note note) => string.Join("、", frame.Tags.Where(t => !t.Deleted && note.Tags.Contains(t.Id)).Select(t => t.Name));
+            var oldTags = TagLabels(before, previous);
+            var newTags = TagLabels(_frame, current);
+            if (oldTags != newTags) ChangesText.Text += $"\n\n标签：{(oldTags.Length == 0 ? "无" : oldTags)} → {(newTags.Length == 0 ? "无" : newTags)}";
         }
         RestoreCopyButton.IsEnabled = _snapshot is not null;
         RestoreCurrentButton.IsEnabled = _snapshot is not null && _workspace.Notes.Any(n => n.Id == _snapshot.Id);
         if (row.Last.Kind == "noteFormatConverted" && previous is not null && RestoreCurrentButton.IsEnabled)
         {
-            _beforeConversion = (previous, before.Groups, before.Sequence);
+            _beforeConversion = (previous, before.Directories, before.Sequence);
             RestoreBeforeConversionButton.Visibility = Visibility.Visible;
         }
     }
@@ -312,16 +319,16 @@ public partial class HistoryWindow : Window
         if (_beforeConversion is not { } original) return;
         if (MessageBox.Show(this, $"恢复转换前的{original.Note.FormatLabel}正文与便签属性？当前版本会保留在历史中。",
             "恢复转换前的版本", MessageBoxButton.OKCancel, MessageBoxImage.Question) == MessageBoxResult.OK)
-            Restore(original.Note, original.Groups, original.Sequence, asCopy: false);
+            Restore(original.Note, original.Directories, original.Sequence, asCopy: false);
     }
     private void Restore(bool asCopy)
     {
         Pause(); if (_snapshot is null || _frame is null) return;
-        Restore(_snapshot, _frame.Groups, _frame.Sequence, asCopy);
+        Restore(_snapshot, _frame.Directories, _frame.Sequence, asCopy);
     }
-    private void Restore(Note snapshot, IReadOnlyList<NoteGroup> groups, long sequence, bool asCopy)
+    private void Restore(Note snapshot, IReadOnlyList<NoteDirectory> directories, long sequence, bool asCopy)
     {
-        try { _workspace.RestoreHistoryNote(snapshot, groups, sequence, asCopy); RefreshTimeline(); StatusText.Text = asCopy ? "已恢复为新便签，原便签保持不变。" : "已恢复所选内容；本次恢复也已记入时间轴。"; }
+        try { _workspace.RestoreHistoryNote(snapshot, directories, sequence, asCopy); RefreshTimeline(); StatusText.Text = asCopy ? "已恢复为新便签，原便签保持不变。" : "已恢复所选内容；本次恢复也已记入时间轴。"; }
         catch (Exception ex) { StatusText.Text = "恢复未完成：" + ex.Message; }
     }
     private IEnumerable<int> PlaybackIndices()

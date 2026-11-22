@@ -18,6 +18,8 @@ public static class BackupService
                 if (File.Exists(vault)) archive.CreateEntryFromFile(vault, VaultStore.FileName);
                 var groupsPath = Path.Combine(store.Root, "groups.json");
                 if (File.Exists(groupsPath)) archive.CreateEntryFromFile(groupsPath, "groups.json");
+                var tagsPath = Path.Combine(store.Root, NoteStore.TagsFile);
+                if (File.Exists(tagsPath)) archive.CreateEntryFromFile(tagsPath, NoteStore.TagsFile);
                 foreach (var path in Directory.EnumerateFiles(store.NotesDirectory, "*.json"))
                     archive.CreateEntryFromFile(path, "notes/" + Path.GetFileName(path));
                 foreach (var path in Directory.EnumerateFiles(store.AssetsDirectory, "*.png"))
@@ -36,7 +38,8 @@ public static class BackupService
             throw new InvalidDataException("这是完整历史备份，请退出 Sticky 后解压到新的空 Data 目录；不能通过普通便签导入合并时间轴。");
         if (archive.Entries.Count > 10000) throw new InvalidDataException("备份包含过多文件。");
         var notes = new List<Note>();
-        var importedGroups = new List<NoteGroup>();
+        var importedDirectories = new List<NoteDirectory>();
+        var importedTags = new List<NoteTag>();
         var assets = new Dictionary<string, byte[]>(StringComparer.Ordinal);
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         long total = 0;
@@ -49,12 +52,13 @@ public static class BackupService
             if (entry.Length > 20 * 1024 * 1024 || total > 256 * 1024 * 1024)
                 throw new InvalidDataException("备份过大（单文件上限 20 MB，总计上限 256 MB）。");
             var parts = name.Split('/');
-            if (parts.Length != 2 && name != "groups.json") throw new InvalidDataException("备份包含无效路径。");
+            if (parts.Length != 2 && name is not ("groups.json" or NoteStore.TagsFile)) throw new InvalidDataException("备份包含无效路径。");
             using var stream = entry.Open();
             using var buffer = new MemoryStream();
             stream.CopyTo(buffer);
             var bytes = buffer.ToArray();
-            if (name == "groups.json") importedGroups = NoteStore.ParseGroups(bytes);
+            if (name == "groups.json") importedDirectories = NoteStore.ParseDirectories(bytes);
+            else if (name == NoteStore.TagsFile) importedTags = NoteStore.ParseTags(bytes);
             else if (parts[0] == "notes" && parts[1].EndsWith(".json", StringComparison.Ordinal) && Guid.TryParse(parts[1][..^5], out var id))
                 notes.Add(NoteStore.ParseNote(bytes, id));
             else if (parts[0] == "assets")
@@ -66,31 +70,27 @@ public static class BackupService
             }
             else throw new InvalidDataException("备份包含不支持的文件。");
         }
-        if (notes.Count == 0 && importedGroups.Count == 0)
+        if (notes.Count == 0 && importedDirectories.Count == 0 && importedTags.Count == 0)
         {
             if (archive.GetEntry(VaultStore.FileName) is not null) return [];
-            throw new InvalidDataException("备份中没有便签或分组。");
+            throw new InvalidDataException("备份中没有便签或目录。");
         }
-        var originalGroups = store.LoadGroups();
-        var mergedGroups = originalGroups.Select(g => new NoteGroup { Id = g.Id, Name = g.Name }).ToList();
-        var groupMap = new Dictionary<Guid, Guid>();
-        foreach (var group in importedGroups)
-        {
-            var same = mergedGroups.FirstOrDefault(g => g.Name.Equals(group.Name, StringComparison.OrdinalIgnoreCase));
-            if (same is null)
-            {
-                same = new NoteGroup { Id = mergedGroups.Any(g => g.Id == group.Id) ? Guid.NewGuid() : group.Id, Name = group.Name };
-                mergedGroups.Add(same);
-            }
-            groupMap[group.Id] = same.Id;
-        }
+        var originalDirectories = store.LoadDirectories();
+        var mergedDirectories = originalDirectories.ToList();
+        var originalTags = store.LoadTags();
+        var mergedTags = originalTags.ToList();
+        var sourceTags = importedTags.ToDictionary(t => t.Id);
+        var tagMap = importedTags.Where(t => !t.Deleted).ToDictionary(t => t.Id, t => NoteTagNames.FindOrAdd(mergedTags, t).Id);
+        var directoryMap = DirectoryHierarchy.ImportPaths(mergedDirectories,
+            new DirectoryHierarchy(importedDirectories).InTreeOrder().Where(d => d.State != DirectoryState.Removed), preserveTrash: true);
         foreach (var note in notes)
         {
-            if (note.GroupId is { } groupId)
+            if (note.DirectoryId is { } directoryId)
             {
-                // A backup cannot attach a note to an unrelated local group with a colliding ID.
-                note.GroupId = groupMap.TryGetValue(groupId, out var mapped) ? mapped : null;
+                note.DirectoryId = directoryMap.TryGetValue(directoryId, out var mapped) ? mapped : null;
             }
+            if (note.Tags.Any(id => !sourceTags.ContainsKey(id))) throw new InvalidDataException("备份缺少便签引用的标签。");
+            if (note.Tags.Count > 0) note.SetTags(note.Tags.Where(tagMap.ContainsKey).Select(id => tagMap[id]));
             foreach (var id in note.GetImageIds())
                 if (!assets.ContainsKey(id) && !File.Exists(store.GetAssetPath(id)))
                     throw new InvalidDataException("备份缺少图片：" + id);
@@ -100,12 +100,17 @@ public static class BackupService
                 note.Title = note.Title[..Math.Min(note.Title.Length, 490)] + "（导入副本）";
             }
         }
+        DirectoryHierarchy.FileUnassigned(notes, mergedDirectories);
+        NoteStore.ValidateDirectories(mergedDirectories);
+        NoteStore.ValidateTags(mergedTags);
         // All archive paths, models and hashes have been checked before changing the workspace.
         foreach (var bytes in assets.Values) store.AddImage(bytes);
         var written = new List<string>();
+        var tagsSaved = false;
         try
         {
-            store.SaveGroups(mergedGroups);
+            store.SaveDirectories(mergedDirectories);
+            if (mergedTags.Count != originalTags.Count) { store.SaveTags(mergedTags); tagsSaved = true; }
             foreach (var note in notes)
             {
                 var path = Path.Combine(store.NotesDirectory, note.Id + ".json");
@@ -121,7 +126,8 @@ public static class BackupService
             {
                 store.RollbackImportedNote(Guid.Parse(Path.GetFileNameWithoutExtension(path)));
             }
-            store.SaveGroups(originalGroups);
+            store.SaveDirectories(originalDirectories);
+            if (tagsSaved) store.SaveTags(originalTags);
             throw;
         }
         return notes;

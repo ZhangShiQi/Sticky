@@ -5,15 +5,24 @@
         Title="搜索便签 · Sticky" Width="700" Height="560" MinWidth="540" MinHeight="360" WindowStartupLocation="CenterScreen">
   <Window.Resources><BooleanToVisibilityConverter x:Key="BoolVisibility" /></Window.Resources>
   <Grid Margin="28">
-    <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+    <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
     <TextBlock Text="搜索便签" FontSize="26" FontWeight="SemiBold" Margin="0,0,0,22" />
     <Grid Grid.Row="1">
       <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="150" /></Grid.ColumnDefinitions>
       <TextBox x:Name="QueryBox" Text="{Binding Query, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="搜索标题和正文" Height="42" Margin="0,0,12,0" />
-      <ComboBox Grid.Column="1" ItemsSource="{Binding Scopes}" DisplayMemberPath="Name" SelectedItem="{Binding Scope}" VerticalContentAlignment="Center" AutomationProperties.Name="搜索分组" />
+      <ComboBox Grid.Column="1" ItemsSource="{Binding Scopes}" DisplayMemberPath="Name" SelectedItem="{Binding Scope}" VerticalContentAlignment="Center" AutomationProperties.Name="搜索目录" />
     </Grid>
-    <TextBlock Grid.Row="2" Text="{Binding Summary}" Foreground="{StaticResource Muted}" Margin="0,16,0,16" />
-    <ListBox Grid.Row="3" x:Name="ResultsList" ItemsSource="{Binding Results}" Background="Transparent" BorderThickness="0" HorizontalContentAlignment="Stretch" MouseDoubleClick="OpenSelected" KeyDown="ResultsKeyDown" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+    <DockPanel Grid.Row="2" Margin="0,12,0,0">
+      <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Top">
+        <TextBlock Text="标签" VerticalAlignment="Center" Margin="0,0,6,0" />
+        <Button x:Name="AddTagFilter" Content="＋" Click="ShowTagFilters" Padding="7,3" Margin="0,0,8,4" ToolTip="添加标签筛选" AutomationProperties.Name="添加标签筛选" />
+      </StackPanel>
+      <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" MaxHeight="84">
+        <WrapPanel x:Name="TagFilters" AutomationProperties.Name="已选标签筛选" />
+      </ScrollViewer>
+    </DockPanel>
+    <TextBlock Grid.Row="3" Text="{Binding Summary}" Foreground="{StaticResource Muted}" Margin="0,12,0,14" />
+    <ListBox Grid.Row="4" x:Name="ResultsList" ItemsSource="{Binding Results}" Background="Transparent" BorderThickness="0" HorizontalContentAlignment="Stretch" MouseDoubleClick="OpenSelected" KeyDown="ResultsKeyDown" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
       <ListBox.ItemTemplate><DataTemplate>
         <Border Background="{Binding Background}" CornerRadius="8" Padding="16" Margin="0,0,0,10">
           <Grid>
@@ -21,13 +30,13 @@
             <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="16" TextTrimming="CharacterEllipsis" />
             <TextBlock Grid.Row="1" Text="{Binding Preview}" TextWrapping="Wrap" MaxHeight="64" TextTrimming="CharacterEllipsis" Margin="0,8" Foreground="#5D5E5A" />
             <DockPanel Grid.Row="2">
-              <TextBlock Text="{Binding GroupName}" Foreground="#74776C" FontSize="12" VerticalAlignment="Center" />
+              <TextBlock Text="{Binding DirectoryPath}" Foreground="#74776C" FontSize="12" VerticalAlignment="Center" />
               <Button Content="打开便签 ↗" Click="OpenResult" HorizontalAlignment="Right" Padding="10,6" Background="#80FFFFFF" Margin="0" />
             </DockPanel>
           </Grid>
         </Border>
       </DataTemplate></ListBox.ItemTemplate>
     </ListBox>
-    <TextBlock Grid.Row="3" Text="暂无搜索结果" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{StaticResource Muted}" Visibility="{Binding IsEmpty, Converter={StaticResource BoolVisibility}}" IsHitTestVisible="False" />
+    <TextBlock Grid.Row="4" Text="暂无搜索结果" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{StaticResource Muted}" Visibility="{Binding IsEmpty, Converter={StaticResource BoolVisibility}}" IsHitTestVisible="False" />
   </Grid>
 </Window>

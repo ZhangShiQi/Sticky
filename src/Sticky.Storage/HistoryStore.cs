@@ -68,7 +68,7 @@ public sealed class HistoryStore
         if (Hash(bytes) != hash) throw new InvalidDataException("历史对象损坏，当前便签未被修改。");
         return bytes;
     }
-    private static bool ValidTarget(string relative) => relative is "groups.json" or "device/windows.json"
+    private static bool ValidTarget(string relative) => relative is "groups.json" or NoteStore.TagsFile or "device/windows.json"
         || Regex.IsMatch(relative, @"^notes/[a-fA-F0-9-]{36}\.json$") && Guid.TryParse(Path.GetFileNameWithoutExtension(relative), out _);
     private string DataFile(string target) => ValidTarget(target) ? Path.Combine(_root, target.Replace('/', Path.DirectorySeparatorChar)) : throw new InvalidDataException("历史目标路径无效。");
     private void Initialize()
@@ -88,7 +88,8 @@ public sealed class HistoryStore
             try
             {
                 if (relative.StartsWith("notes/", StringComparison.Ordinal)) _ = NoteStore.ParseNote(bytes, Guid.Parse(Path.GetFileNameWithoutExtension(relative)));
-                else if (relative == "groups.json") _ = NoteStore.ParseGroups(bytes);
+                else if (relative == "groups.json") _ = NoteStore.ParseDirectories(bytes);
+                else if (relative == NoteStore.TagsFile) _ = NoteStore.ParseTags(bytes);
                 else _ = Decode<DeviceState>(bytes);
                 baseline.Documents.Add(relative, Object(bytes));
             }
@@ -97,7 +98,7 @@ public sealed class HistoryStore
         var moved = VaultMigration.ReadMovedIds(_root);
         foreach (var path in Directory.EnumerateFiles(Path.Combine(_root, "notes"), "*.json"))
             if (Guid.TryParse(Path.GetFileNameWithoutExtension(path), out var id) && !moved.Contains(id)) Add("notes/" + id + ".json");
-        Add("groups.json"); Add("device/windows.json");
+        Add("groups.json"); Add(NoteStore.TagsFile); Add("device/windows.json");
         Write("baseline.json", baseline);
     }
     private static void ValidateEvent(HistoryEvent entry)
@@ -148,7 +149,7 @@ public sealed class HistoryStore
         if (after is null) return before is null;
         if (before is null)
         {
-            if (target == "groups.json" && NoteStore.ParseGroups(after).Count == 0) return true;
+            if (target == "groups.json" && NoteStore.ParseDirectories(after).Count == 0) return true;
             if (target == "device/windows.json" && Decode<DeviceState>(after).Windows.Count == 0) return true;
             return false;
         }
@@ -181,10 +182,12 @@ public sealed class HistoryStore
             entry.Before = before is null ? null : Object(before); entry.After = after is null ? null : Object(after);
             if (target == "groups.json" && after is not null)
             {
-                var old = before is null ? [] : NoteStore.ParseGroups(before); var next = NoteStore.ParseGroups(after);
-                var changed = old.Concat(next).Select(g => g.Id).Distinct().Where(id => old.FirstOrDefault(g => g.Id == id)?.Name != next.FirstOrDefault(g => g.Id == id)?.Name).ToHashSet();
+                var old = before is null ? [] : NoteStore.ParseDirectories(before); var next = NoteStore.ParseDirectories(after);
+                var oldTree = new DirectoryHierarchy(old); var nextTree = new DirectoryHierarchy(next);
+                var changed = old.Concat(next).Select(d => d.Id).Distinct().Where(id =>
+                    !oldTree.AncestorsAndSelf(id).Select(d => (d.Id, d.Name, d.State)).SequenceEqual(nextTree.AncestorsAndSelf(id).Select(d => (d.Id, d.Name, d.State)))).ToHashSet();
                 foreach (var path in Directory.EnumerateFiles(Path.Combine(_root, "notes"), "*.json"))
-                    try { var note = NoteStore.ParseNote(File.ReadAllBytes(path), Guid.Parse(Path.GetFileNameWithoutExtension(path))); if (note.GroupId is { } id && changed.Contains(id)) entry.NoteIds.Add(note.Id); }
+                    try { var note = NoteStore.ParseNote(File.ReadAllBytes(path), Guid.Parse(Path.GetFileNameWithoutExtension(path))); if (note.DirectoryId is { } id && changed.Contains(id)) entry.NoteIds.Add(note.Id); }
                     catch (Exception ex) when (ex is IOException or JsonException or FormatException or NoteStore.UnsupportedVersionException) { }
             }
             Write("pending.json", entry);
@@ -242,7 +245,7 @@ public sealed class HistoryStore
                 .Select(File.ReadAllBytes).Where(bytes =>
                 {
                     using var doc = JsonDocument.Parse(bytes);
-                    return doc.RootElement.TryGetProperty("id", out var value) && value.TryGetGuid(out var found) && found == id;
+                    return doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("id", out var value) && value.TryGetGuid(out var found) && found == id;
                 }).Select(bytes => NoteStore.ParseNote(bytes, id)).OrderBy(n => n.ModifiedAt).ToList() : [];
         }
     }
@@ -327,7 +330,7 @@ public sealed class HistoryStore
             var refs = timeline.ProjectReferences(timeline.Events.LastOrDefault()?.Sequence ?? 0).Documents;
             var targets = refs.Keys.Concat(Directory.EnumerateFiles(Path.Combine(_root, "notes"), "*.json")
                 .Where(p => Guid.TryParse(Path.GetFileNameWithoutExtension(p), out _)).Select(p => "notes/" + Guid.Parse(Path.GetFileNameWithoutExtension(p)) + ".json"))
-                .Concat(new[] { "groups.json", "device/windows.json" }).Distinct().ToList();
+                .Concat(new[] { "groups.json", NoteStore.TagsFile, "device/windows.json" }).Distinct().ToList();
             var moved = VaultMigration.ReadMovedIds(_root);
             foreach (var target in targets)
             {
@@ -379,6 +382,7 @@ public sealed class HistoryStore
                         foreach (var path in Directory.EnumerateFiles(directory, pattern)) Add(path, prefix + Path.GetFileName(path));
                     }
                     Add(Path.Combine(_root, "manifest.json"), "manifest.json"); Add(Path.Combine(_root, "groups.json"), "groups.json");
+                    Add(Path.Combine(_root, NoteStore.TagsFile), NoteStore.TagsFile);
                     Add(Path.Combine(_root, VaultStore.FileName), VaultStore.FileName);
                     Add(Path.Combine(_root, "device", "windows.json"), "device/windows.json");
                     Folder(Path.Combine(_root, "notes"), "notes/", "*.json"); Folder(Path.Combine(_root, "assets"), "assets/", "*.png");

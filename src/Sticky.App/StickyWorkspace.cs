@@ -14,7 +14,7 @@ public sealed partial class StickyWorkspace
 {
     public NoteStore Store { get; }
     public List<Note> Notes { get; }
-    public List<NoteGroup> Groups { get; }
+    public List<NoteDirectory> Directories { get; }
     public DeviceState Device { get; }
     public EditorPreferences EditorPreferences { get; private set; }
     public Dictionary<Guid, NoteWindow> Windows { get; } = [];
@@ -48,7 +48,8 @@ public sealed partial class StickyWorkspace
         Startup = startup ?? new StartupRegistration(LauncherContext.Root is string launcherRoot ? System.IO.Path.Combine(launcherRoot, "Sticky.exe")
             : Environment.ProcessPath ?? System.IO.Path.Combine(AppContext.BaseDirectory, "Sticky.exe"), LauncherContext.Root ?? AppContext.BaseDirectory, Store.Root);
         Notes = data.Notes;
-        Groups = data.Groups;
+        Directories = data.Directories;
+        Tags.AddRange(data.Tags);
         Device = data.Device;
         EditorPreferences = data.Preferences;
         Sync = new SyncCoordinator(this);
@@ -82,19 +83,35 @@ public sealed partial class StickyWorkspace
         }
     }
 
-    public void CreateNote(Guid? groupId = null, NoteWindow? near = null)
+    public void CreateNote(Guid? directoryId = null, NoteWindow? near = null)
     {
-        var note = NewNote(groupId);
-        try { StoreFor(note).Save(note); }
+        if (directoryId is { } id && !IsActiveDirectory(id)) return;
+        Note note;
+        try
+        {
+            note = NewNote(directoryId ?? EnsureInboxDirectory());
+            Store.Save(note);
+        }
         catch (Exception ex) { ShowError("无法创建便签", ex); return; }
         Notes.Insert(0, note);
         NotifyChanged();
         OpenNote(note, edit: true, near);
     }
 
-    private Note NewNote(Guid? groupId = null)
+    public Guid EnsureInboxDirectory()
     {
-        var note = new Note { GroupId = groupId,
+        var next = Directories.ToList();
+        var inbox = DirectoryHierarchy.EnsureInbox(next);
+        if (next.Count == Directories.Count) return inbox;
+        Store.SaveDirectories(next);
+        Directories.Add(next[^1]);
+        NotifyChanged();
+        return inbox;
+    }
+
+    private Note NewNote(Guid? directoryId = null)
+    {
+        var note = new Note { DirectoryId = directoryId,
             Color = EditorPreferences.RandomizeNewNoteColor ? NotePalette.Choices[Random.Shared.Next(NotePalette.Choices.Count)].Key : "amber" };
         if (EditorPreferences.NewNoteFormat == "markdown") note.SetMarkdown("");
         return note;
@@ -102,7 +119,8 @@ public sealed partial class StickyWorkspace
 
     public void OpenNote(Note note, bool edit = false, NoteWindow? near = null)
     {
-        if (note.DeletedAt is not null || IsVaultNote(note.Id) && (!Vault.IsUnlocked || VaultViewsHidden)) return;
+        if (note.DeletedAt is not null) return;
+        if (IsVaultNote(note.Id) ? !Vault.IsUnlocked || VaultViewsHidden : !CanUseNoteDirectory(note)) return;
         if (Windows.TryGetValue(note.Id, out var existing))
         {
             if (existing.WindowState == System.Windows.WindowState.Minimized) existing.WindowState = System.Windows.WindowState.Normal;
@@ -140,6 +158,7 @@ public sealed partial class StickyWorkspace
 
     public void Delete(Note note)
     {
+        if (!IsVaultNote(note.Id) && !CanUseNoteDirectory(note)) return;
         if (Windows.TryGetValue(note.Id, out var window) && !window.SaveNow()) return;
         var previous = note.DeletedAt;
         var previousModified = note.ModifiedAt;
@@ -159,6 +178,7 @@ public sealed partial class StickyWorkspace
 
     public void Restore(Note note)
     {
+        if (!IsVaultNote(note.Id) && !CanUseNoteDirectory(note)) return;
         var deleted = note.DeletedAt;
         var modified = note.ModifiedAt;
         note.DeletedAt = null;
@@ -243,7 +263,7 @@ public sealed partial class StickyWorkspace
         catch (Exception ex) { ShowError("无法读取本地历史，当前便签未被修改", ex); }
     }
 
-    public Note RestoreHistoryNote(Note snapshot, IReadOnlyList<NoteGroup> historicalGroups, long sequence, bool asCopy)
+    public Note RestoreHistoryNote(Note snapshot, IReadOnlyList<NoteDirectory> historicalDirectories, long sequence, bool asCopy)
     {
         if (!SaveAllNotes()) throw new System.IO.IOException("请先保存当前编辑内容，再恢复历史。");
         var existing = Notes.FirstOrDefault(n => n.Id == snapshot.Id);
@@ -261,15 +281,42 @@ public sealed partial class StickyWorkspace
             if (!System.IO.File.Exists(path) || Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(System.IO.File.ReadAllBytes(path))) + ".png" != image)
                 throw new System.IO.IOException("历史图片缺失或校验失败，未恢复便签：" + image);
         }
-        if (next.GroupId is { } groupId && !Groups.Any(g => g.Id == groupId))
+        var restoredDirectories = Directories.ToList();
+        if (next.DirectoryId is { } directoryId)
         {
-            var oldName = historicalGroups.FirstOrDefault(g => g.Id == groupId)?.Name;
-            var group = oldName is null ? null : Groups.FirstOrDefault(g => g.Name.Equals(oldName, StringComparison.OrdinalIgnoreCase)) ?? CreateGroup(oldName);
-            next.GroupId = group?.Id;
+            var path = new DirectoryHierarchy(historicalDirectories).AncestorsAndSelf(directoryId);
+            if (path.Count > 0) next.DirectoryId = DirectoryHierarchy.ImportPaths(restoredDirectories, path)[directoryId];
+            else if (!IsActiveDirectory(directoryId)) next.DirectoryId = null;
         }
-        Store.Save(next);
+        next.DirectoryId ??= DirectoryHierarchy.EnsureInbox(restoredDirectories);
+        var addedDirectories = restoredDirectories.Count > Directories.Count;
+        var restoredTags = Tags.ToList();
+        if (next.Tags.Count > 0)
+        {
+            var tagIds = next.Tags.ToHashSet();
+            var historical = Store.History.ReadTimeline().Frame(sequence).Tags.Where(t => tagIds.Contains(t.Id) && !t.Deleted);
+            next.SetTags(historical.Select(tag => restoredTags.FirstOrDefault(t => t.Id == tag.Id && !t.Deleted)?.Id
+                ?? NoteTagNames.FindOrAdd(restoredTags, tag).Id));
+        }
+        var addedTags = restoredTags.Count > Tags.Count;
+        var directoriesSaved = false;
+        var tagsSaved = false;
+        try
+        {
+            if (addedDirectories) { Store.SaveDirectories(restoredDirectories); directoriesSaved = true; }
+            if (addedTags) { Store.SaveTags(restoredTags); tagsSaved = true; }
+            Store.Save(next);
+        }
+        catch
+        {
+            if (directoriesSaved) Store.SaveDirectories(Directories);
+            if (tagsSaved) Store.SaveTags(Tags);
+            throw;
+        }
+        if (addedDirectories) Directories.AddRange(restoredDirectories.Skip(Directories.Count).ToArray());
+        if (addedTags) Tags.AddRange(restoredTags.Skip(Tags.Count).ToArray());
         if (asCopy) { Notes.Insert(0, next); NotifyChanged(); OpenNote(next); return next; }
-        existing!.Title = next.Title; existing.Color = next.Color; existing.CopyBodyFrom(next); existing.GroupId = next.GroupId;
+        existing!.Title = next.Title; existing.Color = next.Color; existing.CopyBodyFrom(next); existing.DirectoryId = next.DirectoryId; existing.SetTags(next.Tags);
         existing.ModifiedAt = next.ModifiedAt; existing.DeletedAt = null; existing.ConflictOf = next.ConflictOf;
         if (Windows.TryGetValue(existing.Id, out var window)) window.ReloadAfterSync(true, "已恢复历史版本");
         NotifyChanged(); OpenNote(existing); return existing;
@@ -289,7 +336,7 @@ public sealed partial class StickyWorkspace
         Search.FocusQuery();
     }
 
-    public string GroupName(Guid? id) => id is null ? "未分组" : Groups.FirstOrDefault(g => g.Id == id)?.Name ?? "未分组";
+    public string DirectoryPath(Guid? id) => new DirectoryHierarchy(Directories).PathLabel(id);
 
     public void ShowSyncSettings() => ShowSettings(SettingsSection.Sync);
 
@@ -327,8 +374,11 @@ public sealed partial class StickyWorkspace
         foreach (var file in System.IO.Directory.EnumerateFiles(Store.NotesDirectory, "*.json"))
             if (Guid.TryParse(System.IO.Path.GetFileNameWithoutExtension(file), out var id) && !Notes.Any(n => n.Id == id) && !VaultMigrations.MovedIds.Contains(id))
                 throw new System.IO.IOException("存在尚未读取的本地便签文件，同步已暂停以保留原始数据。请先处理启动时的数据恢复提示。");
-        var snapshot = new SyncSnapshot { Notes = Notes.ToDictionary(n => n.Id, n => n), Groups = Groups, Ai = AiSettings.ExportShared() }.Clone();
+        var snapshot = new SyncSnapshot { Notes = Notes.ToDictionary(n => n.Id, n => n), Directories = Directories, Tags = Tags, Ai = AiSettings.ExportShared() }.Clone();
         ExcludeVaultSources(snapshot);
+        var tagIds = Tags.Select(t => t.Id).ToHashSet();
+        if (snapshot.Notes.Values.Any(note => note.Tags.Any(id => !tagIds.Contains(id))))
+            throw new System.IO.IOException("部分便签引用的标签无法读取，同步已暂停以保留原始数据。");
         return snapshot;
     }
 
@@ -342,11 +392,16 @@ public sealed partial class StickyWorkspace
         var reconciled = SnapshotMerger.Merge(captured, incoming, current);
         var final = reconciled.Snapshot;
         ExcludeVaultSources(final);
+        DirectoryHierarchy.FileUnassigned(final.Notes.Values, final.Directories);
         GitSyncEngine.ValidateSnapshot(final, checkAssets: false);
         var usedAssets = final.Notes.Values.SelectMany(n => n.GetImageIds()).ToHashSet();
         foreach (var (id, bytes) in final.Assets.Where(p => usedAssets.Contains(p.Key))) { token.ThrowIfCancellationRequested(); Store.AddImage(bytes); }
-        Store.SaveGroups(final.Groups);
-        Groups.Clear(); Groups.AddRange(final.Groups);
+        Store.SaveDirectories(final.Directories);
+        Directories.Clear(); Directories.AddRange(final.Directories);
+        if (!Tags.SequenceEqual(final.Tags)) { Store.SaveTags(final.Tags); Tags.Clear(); Tags.AddRange(final.Tags); }
+        var directoryTree = new DirectoryHierarchy(Directories);
+        foreach (var note in Notes.Where(n => !directoryTree.IsActive(n.DirectoryId)))
+            if (Windows.TryGetValue(note.Id, out var window)) window.Close();
         // Save new conflict copies before changing any existing original, including across crashes/disk errors.
         foreach (var next in final.Notes.Values.OrderBy(n => Notes.Any(existing => existing.Id == n.Id)))
         {
@@ -356,15 +411,15 @@ public sealed partial class StickyWorkspace
             if (existing is not null && SyncJson.Equal(existing, next)) continue;
             Store.Save(next);
             if (existing is null) { Notes.Add(next); continue; }
-            var reloadBody = existing.SchemaVersion != next.SchemaVersion || existing.MarkdownSource != next.MarkdownSource
+            var reloadBody = existing.IsMarkdown != next.IsMarkdown || existing.MarkdownSource != next.MarkdownSource
                 || !SyncJson.Equal(existing.Blocks, next.Blocks);
-            existing.Title = next.Title; existing.Color = next.Color; existing.CopyBodyFrom(next);
-            existing.GroupId = next.GroupId; existing.ConflictOf = next.ConflictOf;
+            existing.Title = next.Title; existing.Color = next.Color; existing.CopyBodyFrom(next); existing.SetTags(next.Tags);
+            existing.DirectoryId = next.DirectoryId; existing.ConflictOf = next.ConflictOf;
             existing.CreatedAt = next.CreatedAt; existing.ModifiedAt = next.ModifiedAt; existing.DeletedAt = next.DeletedAt;
             if (Windows.TryGetValue(existing.Id, out var window))
             {
                 window.ReloadAfterSync(reloadBody);
-                if (existing.DeletedAt is not null) window.Close();
+                if (existing.DeletedAt is not null || !directoryTree.IsActive(existing.DirectoryId)) window.Close();
             }
         }
         AiSettings.ApplyShared(final.Ai);
@@ -372,38 +427,62 @@ public sealed partial class StickyWorkspace
         return reconciled;
     }
 
-    public NoteGroup? CreateGroup(string name)
+    public NoteDirectory? CreateDirectory(string name, Guid? parentId = null)
     {
-        var group = new NoteGroup { Name = name.Trim() };
-        var next = Groups.Append(group).ToList();
-        try { Store.SaveGroups(next); }
-        catch (Exception ex) { ShowError("无法创建分组", ex); return null; }
-        Groups.Add(group);
+        if (parentId is { } id && !IsActiveDirectory(id)) return null;
+        var directory = new NoteDirectory { Name = name.Trim(), ParentId = parentId };
+        var next = Directories.Append(directory).ToList();
+        try { Store.SaveDirectories(next); }
+        catch (Exception ex) { ShowError("无法创建目录", ex); return null; }
+        Directories.Add(directory);
         NotifyChanged();
-        return group;
+        return directory;
     }
 
-    public bool RenameGroup(NoteGroup group, string name)
+    public bool RenameDirectory(NoteDirectory directory, string name)
     {
-        var previous = group.Name;
-        group.Name = name.Trim();
-        try { Store.SaveGroups(Groups); }
-        catch (Exception ex) { group.Name = previous; ShowError("无法重命名分组", ex); return false; }
+        if (!Directories.Contains(directory) || !IsActiveDirectory(directory.Id)) return false;
+        var previous = directory.Name;
+        directory.Name = name.Trim();
+        try { Store.SaveDirectories(Directories); }
+        catch (Exception ex) { directory.Name = previous; ShowError("无法重命名目录", ex); return false; }
         NotifyChanged();
         return true;
     }
 
-    public bool MoveNote(Note note, Guid? groupId)
+    public bool MoveDirectory(NoteDirectory directory, Guid? parentId)
     {
-        if (groupId is not null && !Groups.Any(g => g.Id == groupId)) return false;
+        if (!CanMoveDirectory(directory, parentId)) return false;
+        if (directory.ParentId == parentId) return true;
+        var previous = directory.ParentId;
+        directory.ParentId = parentId;
+        try { Store.SaveDirectories(Directories); }
+        catch (Exception ex) { directory.ParentId = previous; ShowError("无法移动目录", ex); return false; }
+        NotifyChanged();
+        return true;
+    }
+
+    public bool CanMoveDirectory(NoteDirectory directory, Guid? parentId)
+    {
+        if (!Directories.Contains(directory) || !IsActiveDirectory(directory.Id)) return false;
+        if (parentId is { } id && !IsActiveDirectory(id)) return false;
+        if (new DirectoryHierarchy(Directories).AncestorsAndSelf(parentId).Any(ancestor => ancestor.Id == directory.Id)) return false;
+        return !Directories.Any(d => d.Id != directory.Id && d.State == DirectoryState.Active && d.ParentId == parentId &&
+            StringComparer.OrdinalIgnoreCase.Equals(d.Name.Trim(), directory.Name.Trim()));
+    }
+
+    public bool MoveNote(Note note, Guid directoryId)
+    {
+        if (note.DeletedAt is not null || IsVaultNote(note.Id) || !Notes.Contains(note) || !CanUseNoteDirectory(note)) return false;
+        if (!IsActiveDirectory(directoryId)) return false;
         if (Windows.TryGetValue(note.Id, out var window) && !window.SaveNow()) return false;
-        if (note.GroupId == groupId) return true;
-        var previous = note.GroupId;
+        if (note.DirectoryId == directoryId) return true;
+        var previous = note.DirectoryId;
         var modified = note.ModifiedAt;
-        note.GroupId = groupId;
+        note.DirectoryId = directoryId;
         note.ModifiedAt = DateTimeOffset.UtcNow;
         try { StoreFor(note).Save(note); }
-        catch (Exception ex) { note.GroupId = previous; note.ModifiedAt = modified; ShowError("无法移动便签", ex); return false; }
+        catch (Exception ex) { note.DirectoryId = previous; note.ModifiedAt = modified; ShowError("无法移动便签", ex); return false; }
         NotifyChanged();
         return true;
     }
