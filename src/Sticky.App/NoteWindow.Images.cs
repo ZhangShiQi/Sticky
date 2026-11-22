@@ -14,11 +14,6 @@ public partial class NoteWindow
     private ImageViewerWindow? _imageViewer;
     private readonly Dictionary<string, BitmapSource> _markdownBitmaps = [];
 
-    private void OnBodyScrollChanged(object sender, ScrollChangedEventArgs e)
-    {
-        if (e.ViewportWidthChange != 0) FitBodyImages();
-    }
-
     private void FitBodyImages()
     {
         var width = Editor.ViewportWidth;

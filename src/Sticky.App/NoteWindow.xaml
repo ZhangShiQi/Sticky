@@ -31,6 +31,32 @@
         </ControlTemplate.Triggers>
       </ControlTemplate></Setter.Value></Setter>
     </Style>
+    <Style x:Key="BodyScrollBarStyle" TargetType="ScrollBar">
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="ScrollBar">
+            <Track x:Name="PART_Track" Orientation="Vertical" IsDirectionReversed="True">
+              <Track.Thumb>
+                <Thumb Focusable="False">
+                  <Thumb.Template>
+                    <ControlTemplate TargetType="Thumb">
+                      <Grid Background="Transparent">
+                        <Border x:Name="Indicator" Width="4" Margin="0,0,1,0" HorizontalAlignment="Right"
+                                CornerRadius="2" Background="#AABDBDC1" />
+                      </Grid>
+                      <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Indicator" Property="Background" Value="#D9DDDDDF" /></Trigger>
+                        <Trigger Property="IsDragging" Value="True"><Setter TargetName="Indicator" Property="Background" Value="#EFEFEFF1" /></Trigger>
+                      </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                  </Thumb.Template>
+                </Thumb>
+              </Track.Thumb>
+            </Track>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
   </Window.Resources>
   <Border x:Name="NoteSurface" CornerRadius="8" Background="#303030" BorderBrush="#555555" BorderThickness="1" SnapsToDevicePixels="True">
     <Grid>
@@ -52,21 +78,24 @@
                      TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}" AutomationProperties.Name="便签标题" />
         </DockPanel>
       </Border>
-      <Grid Grid.Row="1" Margin="11,12,10,10" ClipToBounds="True">
+      <Grid Grid.Row="1" Margin="11,12,10,10" ClipToBounds="True" ScrollViewer.ScrollChanged="OnBodyScrollChanged">
         <Grid>
           <Grid.LayoutTransform><ScaleTransform x:Name="ContentScale" /></Grid.LayoutTransform>
           <RichTextBox x:Name="Editor" Background="Transparent" BorderThickness="0" Padding="0" FontSize="16" Foreground="#ECECEC" CaretBrush="#ECECEC"
                        VerticalScrollBarVisibility="Hidden" HorizontalScrollBarVisibility="Disabled" AcceptsTab="True" IsReadOnly="True"
                        PreviewMouseLeftButtonDown="StartEditing" SelectionChanged="EditorSelectionChanged" TextChanged="ContentChanged"
-                       ScrollViewer.ScrollChanged="OnBodyScrollChanged"
                        IsDocumentEnabled="True" IsInactiveSelectionHighlightEnabled="True" SpellCheck.IsEnabled="False" AutomationProperties.Name="便签正文" />
           <editor:MarkdownLiveEditor x:Name="MarkdownEditor" Visibility="Collapsed" Background="Transparent" BorderThickness="0" Padding="0" Foreground="#ECECEC"
-                   FontFamily="Segoe UI, Microsoft YaHei UI" WordWrap="True" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                   FontFamily="Segoe UI, Microsoft YaHei UI" WordWrap="True" VerticalScrollBarVisibility="Hidden" HorizontalScrollBarVisibility="Disabled"
                    PreviewMouseLeftButtonDown="StartEditing" TextChanged="ContentChanged" AutomationProperties.Name="Markdown 正文" />
           <TextBlock x:Name="Placeholder" Text="点击这里，写下想法…" Foreground="#A5A5A5" Margin="3,2,0,0" IsHitTestVisible="False" />
         </Grid>
       </Grid>
-      <Border Grid.Row="1" x:Name="ZoomBadge" Visibility="Collapsed" Panel.ZIndex="1"
+      <ScrollBar Grid.Row="1" x:Name="BodyScrollBar" Panel.ZIndex="1" Visibility="Hidden" Style="{StaticResource BodyScrollBarStyle}"
+                 Width="10" Margin="0,12,5,10" HorizontalAlignment="Right" Orientation="Vertical" Focusable="False" IsTabStop="False" IsHitTestVisible="False"
+                 Scroll="OnOverlayScroll" MouseWheel="OnOverlayMouseWheel" Thumb.DragStarted="OnScrollThumbDragStarted"
+                 Thumb.DragCompleted="OnScrollThumbDragCompleted" AutomationProperties.Name="正文滚动条" />
+      <Border Grid.Row="1" x:Name="ZoomBadge" Visibility="Collapsed" Panel.ZIndex="2"
               HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,5,10,0" Padding="8,4"
               Background="#F2222222" BorderBrush="#55FFFFFF" BorderThickness="1" CornerRadius="5"
               IsHitTestVisible="False">

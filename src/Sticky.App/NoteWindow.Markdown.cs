@@ -16,6 +16,7 @@ public partial class NoteWindow
         _loading = true;
         try
         {
+            HideBodyScrollBar();
             MarkdownEditor.LoadSource(_note.MarkdownSource ?? "");
             MarkdownEditor.FontSize = _workspace.EditorPreferences.DefaultFontSize;
             if (!_note.IsMarkdown)
@@ -37,7 +38,6 @@ public partial class NoteWindow
         MarkdownEditor.SetEditable(_note.IsMarkdown && IsEditing);
         RichTextTools.Visibility = _note.IsMarkdown ? Visibility.Collapsed : Visibility.Visible;
         Editor.IsReadOnly = !IsEditing || _note.IsMarkdown;
-        Editor.VerticalScrollBarVisibility = IsEditing ? ScrollBarVisibility.Auto : ScrollBarVisibility.Hidden;
     }
 
     private void FocusBody()

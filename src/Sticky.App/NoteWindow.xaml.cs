@@ -73,6 +73,7 @@ public partial class NoteWindow : Window
         Topmost = state.Topmost;
         _saveTimer.Tick += (_, _) => { _saveTimer.Stop(); SaveNow(false); };
         _layoutTimer.Tick += (_, _) => { _layoutTimer.Stop(); CaptureWindowState(); _workspace.SaveDevice(); };
+        _scrollBarTimer.Tick += OnScrollBarIdle;
         CommandBindings.Add(new CommandBinding(ApplicationCommands.New, (_, _) => CreateNearbyNote()));
         CommandBindings.Add(new CommandBinding(ApplicationCommands.Save, (_, _) => SaveNow()));
         CommandBindings.Add(new CommandBinding(ApplicationCommands.Paste, PasteExecuted, (_, e) => e.CanExecute = true));
@@ -341,6 +342,7 @@ public partial class NoteWindow : Window
         _saveTimer.Stop();
         _layoutTimer.Stop();
         _zoomBadgeTimer.Stop();
+        HideBodyScrollBar();
         SaveContentZoom();
         CaptureWindowState();
         _state.IsOpen = _workspace.IsExiting && _note.DeletedAt is null;

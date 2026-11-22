@@ -65,6 +65,7 @@ internal static partial class Program
         Run("Device layout stays outside note content", DeviceRoundTrip);
         Run("Note zoom reflows both editors and persists independently from content and history", NoteZoomLifecycle);
         Run("Note zoom for vault notes stays in memory until locking", NoteZoomInVault);
+        Run("Note overlay scrollbar stays thin at every zoom and preserves both editors' widths", NoteOverlayScrollBar);
         Run("Multiple windows, debounce autosave, close/reopen, exit/restart", WindowLifecycle);
         Run("New-note button and shortcut open beside the current note and retain the group", NearbyNoteWindows);
         Run("Nearby placement fits monitor edges, negative coordinates and scaling", NearbyPlacementEdges);

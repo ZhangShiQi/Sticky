@@ -4,7 +4,7 @@
 
 ## 使用 Windows 便携版
 
-从 [GitHub Releases](https://github.com/ZhangShiQi/Sticky/releases) 获取已发布的 Windows x64 便携包，或自行打包生成 `dist/Sticky-0.9.0-win-x64-portable.zip`，完整解压后双击根目录的 `Sticky.exe`。目标电脑不需要安装 .NET SDK、.NET Runtime 或 Git。请保留随包的 `tools` 文件夹，包含 WPF 程序、Git 和 Git Credential Manager。当前源码版本为 0.9.0，已发布版本与更新记录见 Releases。
+从 [GitHub Releases](https://github.com/ZhangShiQi/Sticky/releases) 获取已发布的 Windows x64 便携包，或自行打包生成 `dist/Sticky-0.9.1-win-x64-portable.zip`，完整解压后双击根目录的 `Sticky.exe`。目标电脑不需要安装 .NET SDK、.NET Runtime 或 Git。请保留随包的 `tools` 文件夹，包含 WPF 程序、Git 和 Git Credential Manager。当前源码版本为 0.9.1，已发布版本与更新记录见 Releases。
 
 便携版自动将数据存到 exe 旁边的 `Data`，不依赖当前工作目录，也不读取开发预览 `.local-demo` 中的便签。发布包是空白工作空间，不包含开发机上的便签、仓库配置、Git 历史或凭据。原有便签可先导出 ZIP，再在便携版导入。
 
